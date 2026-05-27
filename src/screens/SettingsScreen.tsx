@@ -24,7 +24,7 @@ export function SettingsScreen({
   return (
     <div className="min-h-screen bg-[#F9FAFB] dark:bg-slate-950 flex flex-col">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800 px-4 py-3 shrink-0">
+      <header className="sticky top-0 z-40 bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800 px-4 pt-10 pb-3 shrink-0">
         <div className="flex items-center gap-3">
           <button onClick={onBack} className="p-2 -ml-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition-all text-gray-700 dark:text-slate-350">
             <ArrowLeft size={20} />
@@ -104,9 +104,9 @@ export function SettingsScreen({
               <span className="text-xs font-semibold text-slate-650 dark:text-slate-300">Sound Success Alerts</span>
               <button
                 type="button"
-                className="w-9 h-5.5 rounded-full bg-orange-500 relative outline-none"
+                className="w-9 h-[22px] rounded-full bg-orange-500 relative outline-none shrink-0"
               >
-                <div className="w-4.5 h-4.5 rounded-full bg-white shadow-sm absolute top-0.5 right-0.5" />
+                <div className="w-[18px] h-[18px] rounded-full bg-white shadow-sm absolute top-[2px] right-[2px]" />
               </button>
             </div>
           </div>

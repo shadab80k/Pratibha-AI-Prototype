@@ -18,6 +18,7 @@ import { BottomNav } from './components/BottomNav';
 import { Toast } from './components/Toast';
 import { Sidebar } from './components/Sidebar';
 import { children as initialChildren, homeVisits as initialVisits, notifications as initialNotifications } from './data/mockData';
+import { CloudOff, Wifi, Battery } from 'lucide-react';
 
 export type Screen =
   | 'splash'
@@ -365,9 +366,27 @@ function App() {
           </div>
 
           {/* Inner Screen Container */}
-          <div className={`phone-screen w-full h-full bg-[#F9FAFB] rounded-[44px] overflow-hidden relative flex flex-col pt-3 ${
+          <div className={`phone-screen w-full h-full bg-[#F9FAFB] dark:bg-slate-950 rounded-[44px] overflow-hidden relative flex flex-col ${
             isDarkMode ? 'dark' : ''
           }`}>
+            {/* Status Bar Overlay */}
+            {screen !== 'splash' && (
+              <div className={`absolute top-0 left-0 right-0 h-10 px-6 flex items-center justify-between text-[11px] font-semibold z-45 bg-transparent pointer-events-none select-none ${
+                screen === 'voice-report' 
+                  ? 'text-white' 
+                  : 'text-gray-800 dark:text-white'
+              }`}>
+                <div>9:41</div>
+                <div className="flex items-center gap-1.5 pointer-events-auto">
+                  {isOffline ? (
+                    <CloudOff size={11} className="text-gray-400 dark:text-slate-400" />
+                  ) : (
+                    <Wifi size={11} className="text-emerald-500 dark:text-emerald-400 animate-pulse" />
+                  )}
+                  <Battery size={13} className={screen === 'voice-report' ? 'text-white' : 'text-gray-800 dark:text-white'} />
+                </div>
+              </div>
+            )}
             <main className="flex-1 overflow-y-auto scrollbar-hide dark:bg-slate-950">
               {screen === 'splash' && <SplashScreen onStart={() => navigateTo('login')} />}
               {screen === 'language' && (

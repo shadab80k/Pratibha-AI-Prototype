@@ -42,7 +42,7 @@ export function ChildProfileScreen({
     <div className="min-h-screen bg-[#F9FAFB] dark:bg-slate-950">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800">
-        <div className="flex items-center gap-3 px-4 py-3">
+        <div className="flex items-center gap-3 px-4 pt-10 pb-3">
           <button
             onClick={onBack}
             className="p-2 -ml-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition-all text-gray-700 dark:text-slate-350"

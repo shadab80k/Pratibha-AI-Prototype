@@ -139,44 +139,48 @@ export function Sidebar({
             </p>
             <div className="space-y-2">
               {/* Dark Mode Toggle */}
-              <div className="flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-transparent dark:border-slate-850/50">
+              <button
+                onClick={onToggleDarkMode}
+                className="w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-transparent dark:border-slate-850/50 active:scale-[0.98] transition-all cursor-pointer"
+              >
                 <span className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-350">
-                  {isDarkMode ? <Moon size={14} className="text-amber-400" /> : <Sun size={14} className="text-orange-550" />}
+                  {isDarkMode ? <Moon size={14} className="text-amber-400" /> : <Sun size={14} className="text-orange-500" />}
                   Dark Theme
                 </span>
-                <button
-                  onClick={onToggleDarkMode}
-                  className={`w-9 h-5.5 rounded-full transition-colors duration-300 relative outline-none ${
+                <div
+                  className={`w-9 h-[22px] rounded-full transition-colors duration-300 relative shrink-0 ${
                     isDarkMode ? 'bg-orange-500' : 'bg-slate-200 dark:bg-slate-700'
                   }`}
                 >
                   <div
-                    className={`w-4.5 h-4.5 rounded-full bg-white shadow-sm transition-transform duration-300 absolute top-0.5 left-0.5 ${
-                      isDarkMode ? 'translate-x-3.5' : 'translate-x-0'
+                    className={`w-[18px] h-[18px] rounded-full bg-white shadow-sm transition-transform duration-300 absolute top-[2px] left-[2px] ${
+                      isDarkMode ? 'translate-x-[14px]' : 'translate-x-0'
                     }`}
                   />
-                </button>
-              </div>
+                </div>
+              </button>
 
               {/* Offline Mode Toggle */}
-              <div className="flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-transparent dark:border-slate-850/50">
+              <button
+                onClick={onToggleOffline}
+                className="w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-transparent dark:border-slate-850/50 active:scale-[0.98] transition-all cursor-pointer"
+              >
                 <span className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-350">
                   {isOffline ? <CloudOff size={14} className="text-slate-400" /> : <Wifi size={14} className="text-emerald-500" />}
                   Offline Sync
                 </span>
-                <button
-                  onClick={onToggleOffline}
-                  className={`w-9 h-5.5 rounded-full transition-colors duration-300 relative outline-none ${
+                <div
+                  className={`w-9 h-[22px] rounded-full transition-colors duration-300 relative shrink-0 ${
                     isOffline ? 'bg-orange-500' : 'bg-slate-200 dark:bg-slate-700'
                   }`}
                 >
                   <div
-                    className={`w-4.5 h-4.5 rounded-full bg-white shadow-sm transition-transform duration-300 absolute top-0.5 left-0.5 ${
-                      isOffline ? 'translate-x-3.5' : 'translate-x-0'
+                    className={`w-[18px] h-[18px] rounded-full bg-white shadow-sm transition-transform duration-300 absolute top-[2px] left-[2px] ${
+                      isOffline ? 'translate-x-[14px]' : 'translate-x-0'
                     }`}
                   />
-                </button>
-              </div>
+                </div>
+              </button>
             </div>
           </div>
         </div>

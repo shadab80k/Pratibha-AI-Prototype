@@ -66,7 +66,7 @@ export function VoiceReportScreen({ onBack, onComplete }: VoiceReportScreenProps
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 text-white flex flex-col">
       {/* Header */}
-      <header className="flex items-center gap-3 px-4 py-4">
+      <header className="flex items-center gap-3 px-4 pt-10 pb-4">
         <button
           onClick={onBack}
           className="p-2 -ml-2 rounded-xl hover:bg-white/10 active:scale-95 transition-all"

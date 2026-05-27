@@ -47,7 +47,7 @@ export function HomeVisitsScreen({
   return (
     <div className="min-h-screen bg-[#F9FAFB] dark:bg-slate-950 flex flex-col">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-gray-100 dark:border-slate-800 px-4 py-3 shrink-0">
+      <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-gray-100 dark:border-slate-800 px-4 pt-10 pb-3 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button onClick={onBack} className="p-2 -ml-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition-all text-gray-700 dark:text-white">
@@ -131,7 +131,7 @@ export function HomeVisitsScreen({
 
         {/* Summary Stats */}
         <div className="grid grid-cols-2 gap-3 shrink-0">
-          <div className="bg-amber-50 dark:bg-amber-955/20 rounded-2xl p-4 border border-amber-100 dark:border-amber-900/30">
+          <div className="bg-amber-50 dark:bg-amber-950/20 rounded-2xl p-4 border border-amber-100 dark:border-amber-900/30">
             <div className="flex items-center gap-2 mb-2">
               <Clock size={16} className="text-amber-600 dark:text-amber-450" />
               <span className="text-xs text-amber-600 dark:text-amber-450 font-medium">Pending</span>
@@ -139,7 +139,7 @@ export function HomeVisitsScreen({
             <p className="text-2xl font-bold text-gray-800 dark:text-white">{pending.length}</p>
             <p className="text-xs text-gray-550 dark:text-slate-400">visits to complete</p>
           </div>
-          <div className="bg-emerald-50 dark:bg-emerald-955/20 rounded-2xl p-4 border border-emerald-100 dark:border-emerald-900/30">
+          <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-2xl p-4 border border-emerald-100 dark:border-emerald-900/30">
             <div className="flex items-center gap-2 mb-2">
               <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-450" />
               <span className="text-xs text-emerald-600 dark:text-emerald-450 font-medium">Completed</span>
@@ -162,7 +162,7 @@ export function HomeVisitsScreen({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <h4 className="text-sm font-semibold text-gray-800 dark:text-white truncate pr-2">{visit.childName}&apos;s Home</h4>
-                      <span className="text-[10px] px-2 py-0.5 bg-amber-100 dark:bg-amber-955/30 text-amber-700 dark:text-amber-450 rounded-full font-medium shrink-0">
+                      <span className="text-[10px] px-2 py-0.5 bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-450 rounded-full font-medium shrink-0">
                         Pending
                       </span>
                     </div>
@@ -173,7 +173,7 @@ export function HomeVisitsScreen({
                     </p>
 
                     {/* AI Suggested Topics */}
-                    <div className="mt-3 p-3 bg-violet-50 dark:bg-violet-955/20 rounded-xl border border-violet-100 dark:border-violet-900/30">
+                    <div className="mt-3 p-3 bg-violet-50 dark:bg-violet-950/20 rounded-xl border border-violet-100 dark:border-violet-900/30">
                       <div className="flex items-center gap-2 mb-2">
                         <MessageCircle size={12} className="text-violet-500 dark:text-violet-400" />
                         <span className="text-[10px] font-medium text-violet-700 dark:text-violet-400">AI Discussion Focus</span>

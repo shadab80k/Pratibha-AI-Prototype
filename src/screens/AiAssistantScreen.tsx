@@ -63,7 +63,7 @@ export function AiAssistantScreen({ onBack }: AiAssistantScreenProps) {
   return (
     <div className="min-h-screen bg-[#F9FAFB] dark:bg-slate-950 flex flex-col">
       {/* Header */}
-      <header className="shrink-0 bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800 px-4 py-3">
+      <header className="shrink-0 bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800 px-4 pt-10 pb-3">
         <div className="flex items-center gap-3">
           <button onClick={onBack} className="p-2 -ml-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition-all text-gray-700 dark:text-slate-350">
             <ArrowLeft size={20} />

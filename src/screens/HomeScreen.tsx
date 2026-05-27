@@ -63,7 +63,7 @@ export function HomeScreen({
   return (
     <div className="min-h-screen bg-[#F9FAFB] dark:bg-slate-950">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-gray-100 dark:border-slate-800 px-4 py-3">
+      <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-gray-100 dark:border-slate-800 px-4 pt-10 pb-3">
         <div className="flex items-center justify-between">
           <button
             onClick={onOpenSidebar}
@@ -109,7 +109,7 @@ export function HomeScreen({
       <div className="px-4 py-4 space-y-4">
         {/* Offline Banner */}
         {isOffline && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-slate-850 rounded-xl border border-transparent dark:border-slate-800">
+          <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-slate-900 rounded-xl border border-transparent dark:border-slate-800">
             <CloudOff size={16} className="text-gray-500 dark:text-slate-400" />
             <p className="text-xs text-gray-500 dark:text-slate-400 flex-1 font-medium">Offline mode - Sandbox local sync active</p>
             <span className="text-[9px] bg-amber-500/20 dark:bg-amber-500/10 px-2 py-0.5 rounded-full text-amber-700 dark:text-amber-450 font-bold">Auto-sync</span>
@@ -224,7 +224,7 @@ export function HomeScreen({
         </div>
 
         {/* Daily Insight */}
-        <div className="bg-orange-50 dark:bg-orange-955/20 rounded-2xl p-4 border border-orange-105 dark:border-orange-900/20">
+        <div className="bg-orange-50 dark:bg-orange-950/20 rounded-2xl p-4 border border-orange-100 dark:border-orange-900/20">
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp size={16} className="text-orange-500" />
             <span className="text-xs font-medium text-orange-600 dark:text-orange-450">Today&apos;s Insight</span>

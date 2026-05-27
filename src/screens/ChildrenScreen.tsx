@@ -39,7 +39,7 @@ export function ChildrenScreen({ onChildSelect, childrenList, onToggleAttendance
   return (
     <div className="min-h-screen bg-[#F9FAFB] dark:bg-slate-950">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-gray-100 dark:border-slate-800 px-4 py-3">
+      <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-gray-100 dark:border-slate-800 px-4 pt-10 pb-3">
         <h1 className="text-xl font-bold text-gray-800 dark:text-white mb-3">Children</h1>
         <div className="flex items-center gap-2">
           <div className="flex-1 flex items-center gap-2 bg-gray-100 dark:bg-slate-800 rounded-xl px-3 h-10">
@@ -87,7 +87,7 @@ export function ChildrenScreen({ onChildSelect, childrenList, onToggleAttendance
           <div
             key={child.id}
             onClick={() => onChildSelect(child.id)}
-            className="w-full flex items-center gap-3 p-3 bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm active:scale-[0.99] hover:bg-slate-50 dark:hover:bg-slate-850/50 cursor-pointer transition-all text-left"
+            className="w-full flex items-center gap-3 p-3 bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm active:scale-[0.99] hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-all text-left"
           >
             {/* Quick Attendance Checkbox Toggle */}
             <button
@@ -112,17 +112,17 @@ export function ChildrenScreen({ onChildSelect, childrenList, onToggleAttendance
                 className="w-14 h-14 rounded-xl object-cover bg-orange-100"
               />
               {child.attendance === 'present' && (
-                <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center">
+                <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900 flex items-center justify-center">
                   <UserCheck size={10} className="text-white" />
                 </div>
               )}
               {child.attendance === 'absent' && (
-                <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-red-500 rounded-full border-2 border-white flex items-center justify-center">
+                <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 flex items-center justify-center">
                   <AlertTriangle size={10} className="text-white" />
                 </div>
               )}
               {child.attendance === 'irregular' && (
-                <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-amber-500 rounded-full border-2 border-white flex items-center justify-center">
+                <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-amber-500 rounded-full border-2 border-white dark:border-slate-900 flex items-center justify-center">
                   <AlertTriangle size={10} className="text-white" />
                 </div>
               )}
@@ -131,29 +131,29 @@ export function ChildrenScreen({ onChildSelect, childrenList, onToggleAttendance
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-semibold text-gray-800 dark:text-white">{child.name}</h3>
-                <span className="text-xs text-gray-400">({child.ageDisplay})</span>
+                <span className="text-xs text-gray-400 dark:text-slate-500">({child.ageDisplay})</span>
               </div>
               <div className="flex items-center gap-2 mt-1">
                 <span
                   className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
                     child.nutritionStatus === 'good'
-                      ? 'bg-emerald-100 text-emerald-700'
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
                       : child.nutritionStatus === 'at-risk'
-                      ? 'bg-red-100 text-red-700'
-                      : 'bg-amber-100 text-amber-700'
+                      ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400'
+                      : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
                   }`}
                 >
                   {child.nutritionStatus === 'good' ? 'Good' : child.nutritionStatus === 'at-risk' ? 'At Risk' : 'Monitoring'}
                 </span>
                 {child.needsAttention && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium flex items-center gap-1">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400 font-medium flex items-center gap-1">
                     <Heart size={8} />
                     Needs Attention
                   </span>
                 )}
               </div>
               {child.observations.length > 0 && (
-                <p className="text-[11px] text-gray-400 mt-1 truncate">
+                <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1 truncate">
                   {child.observations[0].note}
                 </p>
               )}
@@ -163,25 +163,25 @@ export function ChildrenScreen({ onChildSelect, childrenList, onToggleAttendance
             <div className="shrink-0 flex flex-col items-center">
               <div className="relative w-10 h-10">
                 <svg className="w-10 h-10 -rotate-90" viewBox="0 0 36 36">
-                  <circle cx="18" cy="18" r="15" fill="none" stroke="#f3f4f6" strokeWidth="3" />
+                  <circle cx="18" cy="18" r="15" fill="none" className="stroke-gray-100 dark:stroke-slate-800" strokeWidth="3" />
                   <circle
                     cx="18"
                     cy="18"
                     r="15"
                     fill="none"
-                    stroke={child.developmentProgress >= 80 ? '#10b981' : child.developmentProgress >= 60 ? '#f59e0b' : '#ef4444'}
+                    className={child.developmentProgress >= 80 ? 'stroke-emerald-500' : child.developmentProgress >= 60 ? 'stroke-amber-500' : 'stroke-red-500'}
                     strokeWidth="3"
                     strokeDasharray={`${child.developmentProgress} ${100 - child.developmentProgress}`}
                     strokeLinecap="round"
                   />
                 </svg>
-                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-gray-600">
+                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-gray-600 dark:text-slate-300">
                   {child.developmentProgress}%
                 </span>
               </div>
             </div>
 
-            <ChevronRight size={16} className="text-gray-300 shrink-0" />
+            <ChevronRight size={16} className="text-gray-300 dark:text-slate-600 shrink-0" />
           </div>
         ))}
       </div>

@@ -11,10 +11,10 @@ interface NotificationsScreenProps {
 }
 
 const typeConfig = {
-  alert: { icon: AlertTriangle, bg: 'bg-red-50 dark:bg-red-955/20', border: 'border-red-100 dark:border-red-900/30', iconColor: 'text-red-500' },
-  reminder: { icon: Clock, bg: 'bg-amber-50 dark:bg-amber-955/20', border: 'border-amber-100 dark:border-amber-900/30', iconColor: 'text-amber-500' },
-  success: { icon: CheckCircle2, bg: 'bg-emerald-50 dark:bg-emerald-955/20', border: 'border-emerald-100 dark:border-emerald-900/30', iconColor: 'text-emerald-500' },
-  info: { icon: Info, bg: 'bg-sky-50 dark:bg-sky-955/20', border: 'border-sky-100 dark:border-sky-900/30', iconColor: 'text-sky-500' },
+  alert: { icon: AlertTriangle, bg: 'bg-red-50 dark:bg-red-950/20', border: 'border-red-100 dark:border-red-900/30', iconColor: 'text-red-500' },
+  reminder: { icon: Clock, bg: 'bg-amber-50 dark:bg-amber-950/20', border: 'border-amber-100 dark:border-amber-900/30', iconColor: 'text-amber-500' },
+  success: { icon: CheckCircle2, bg: 'bg-emerald-50 dark:bg-emerald-950/20', border: 'border-emerald-100 dark:border-emerald-900/30', iconColor: 'text-emerald-500' },
+  info: { icon: Info, bg: 'bg-sky-50 dark:bg-sky-950/20', border: 'border-sky-100 dark:border-sky-900/30', iconColor: 'text-sky-500' },
 };
 
 const actionMap: Record<string, Screen> = {
@@ -38,7 +38,7 @@ export function NotificationsScreen({
   return (
     <div className="min-h-screen bg-[#F9FAFB] dark:bg-slate-950 flex flex-col">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-gray-100 dark:border-slate-800 px-4 py-3 shrink-0">
+      <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-gray-100 dark:border-slate-800 px-4 pt-10 pb-3 shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button onClick={onBack} className="p-2 -ml-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition-all text-gray-700 dark:text-slate-350">
