@@ -135,3 +135,13 @@
 .animate-fadeIn {
   animation: fadeIn 0.3s ease-out;
 }
+
+/* Phone screen constraints */
+.phone-screen .min-h-screen {
+  min-height: 100% !important;
+}
+
+.phone-screen {
+  position: relative;
+  height: 100%;
+}

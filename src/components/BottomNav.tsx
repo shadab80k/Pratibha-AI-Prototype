@@ -17,7 +17,7 @@ const tabs: { key: Tab; label: string; icon: typeof Home }[] = [
 
 export function BottomNav({ activeTab, onTabChange, notificationCount }: BottomNavProps) {
   return (
-    <nav className="shrink-0 h-16 bg-white border-t border-gray-200 flex items-center justify-around px-2 z-50 relative">
+    <nav className="shrink-0 h-16 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 flex items-center justify-around px-2 z-50 relative">
       {tabs.map((tab) => {
         const isActive = activeTab === tab.key;
         const Icon = tab.icon;
@@ -26,7 +26,7 @@ export function BottomNav({ activeTab, onTabChange, notificationCount }: BottomN
             key={tab.key}
             onClick={() => onTabChange(tab.key)}
             className={`flex flex-col items-center justify-center w-16 h-full rounded-lg transition-all duration-200 select-none active:scale-95 ${
-              isActive ? 'text-orange-500' : 'text-gray-400'
+              isActive ? 'text-orange-500' : 'text-gray-400 dark:text-slate-500'
             }`}
           >
             <div className="relative">
@@ -41,7 +41,7 @@ export function BottomNav({ activeTab, onTabChange, notificationCount }: BottomN
                 </span>
               )}
             </div>
-            <span className={`text-[10px] mt-0.5 font-medium ${isActive ? 'text-orange-500' : 'text-gray-400'}`}>
+            <span className={`text-[10px] mt-0.5 font-medium ${isActive ? 'text-orange-500' : 'text-gray-400 dark:text-slate-500'}`}>
               {tab.label}
             </span>
           </button>
