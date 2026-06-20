@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { SplashScreen } from './screens/SplashScreen';
 import { LanguageScreen } from './screens/LanguageScreen';
 import { LoginScreen } from './screens/LoginScreen';
@@ -91,7 +91,15 @@ async function apiCall(endpoint: string, options: RequestInit = {}) {
 }
 
 function AppContent() {
+  const mainRef = useRef<HTMLElement>(null);
   const [screen, setScreen] = useState<Screen>('splash');
+
+  useEffect(() => {
+    if (mainRef.current) {
+      mainRef.current.scrollTop = 0;
+    }
+  }, [screen]);
+
   const [prevScreen, setPrevScreen] = useState<Screen | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
@@ -914,7 +922,7 @@ function AppContent() {
                 </div>
               </div>
             )}
-            <main className="flex-1 overflow-y-auto scrollbar-hide dark:bg-slate-950">
+            <main ref={mainRef} className="flex-1 overflow-y-auto scrollbar-hide dark:bg-slate-950">
               {screen === 'splash' && <SplashScreen onStart={() => navigateTo('language')} />}
               {screen === 'language' && (
                 <LanguageScreen

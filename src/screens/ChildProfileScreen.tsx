@@ -181,6 +181,14 @@ export function ChildProfileScreen({
     return text;
   };
 
+  // Scroll main container to top on tab change
+  useEffect(() => {
+    const mainContainer = document.querySelector('.phone-screen main');
+    if (mainContainer) {
+      mainContainer.scrollTop = 0;
+    }
+  }, [activeTab]);
+
   // Recording Timer effect
   useEffect(() => {
     let timerInterval: ReturnType<typeof setInterval>;
