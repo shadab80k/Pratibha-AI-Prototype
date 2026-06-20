@@ -1,5 +1,14 @@
 import { Home, Users, Sparkles, FileText, Bot } from 'lucide-react';
 import type { Tab } from '../App';
+import { useLanguage } from '../context/LanguageContext';
+
+const tabKeys: Record<Tab, any> = {
+  home: 'homeTab',
+  children: 'childrenTab',
+  activities: 'activitiesTab',
+  reports: 'reportsTab',
+  'ai-assistant': 'aiAssistantTab',
+};
 
 interface BottomNavProps {
   activeTab: Tab;
@@ -16,6 +25,8 @@ const tabs: { key: Tab; label: string; icon: typeof Home }[] = [
 ];
 
 export function BottomNav({ activeTab, onTabChange, notificationCount }: BottomNavProps) {
+  const { t } = useLanguage();
+
   return (
     <nav className="shrink-0 h-16 bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 flex items-center justify-around px-2 z-50 relative">
       {tabs.map((tab) => {
@@ -42,7 +53,7 @@ export function BottomNav({ activeTab, onTabChange, notificationCount }: BottomN
               )}
             </div>
             <span className={`text-[10px] mt-0.5 font-medium ${isActive ? 'text-orange-500' : 'text-gray-400 dark:text-slate-500'}`}>
-              {tab.label}
+              {t(tabKeys[tab.key])}
             </span>
           </button>
         );

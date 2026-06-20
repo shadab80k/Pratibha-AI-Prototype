@@ -17,8 +17,9 @@ import { SettingsScreen } from './screens/SettingsScreen';
 import { BottomNav } from './components/BottomNav';
 import { Toast } from './components/Toast';
 import { Sidebar } from './components/Sidebar';
-import { children as initialChildren, homeVisits as initialVisits, notifications as initialNotifications } from './data/mockData';
+import { children as initialChildren, homeVisits as initialVisits, notifications as initialNotifications, activities } from './data/mockData';
 import { CloudOff, Wifi, Battery } from 'lucide-react';
+import { LanguageProvider, useLanguage, type LanguageCode } from './context/LanguageContext';
 
 export type Screen =
   | 'splash'
@@ -60,27 +61,224 @@ export interface ToastData {
   type: 'success' | 'info' | 'warning';
 }
 
-function App() {
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
+
+const getHeaders = () => {
+  const token = localStorage.getItem('pratibha_jwt');
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+};
+
+async function apiCall(endpoint: string, options: RequestInit = {}) {
+  const url = `${API_BASE}${endpoint}`;
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...getHeaders(),
+      ...options.headers,
+    }
+  });
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      console.warn('Authentication token expired or invalid');
+      localStorage.removeItem('pratibha_jwt');
+    }
+    throw new Error(`API error: ${response.status}`);
+  }
+  return response.json();
+}
+
+function AppContent() {
   const [screen, setScreen] = useState<Screen>('splash');
   const [prevScreen, setPrevScreen] = useState<Screen | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
-  const [language, setLanguage] = useState('en');
-  const [isOffline, setIsOffline] = useState(false);
+  const { language, setLanguage, t } = useLanguage();
+  const [isOffline, setIsOffline] = useState(() => {
+    return localStorage.getItem('pratibha_is_offline') === 'true';
+  });
   const [toast, setToast] = useState<ToastData | null>(null);
-  const [notificationCount, setNotificationCount] = useState(3);
   
-  // Dynamic states for interactive simulator
-  const [childrenList, setChildrenList] = useState(initialChildren);
-  const [visitsList, setVisitsList] = useState(initialVisits);
-  const [notificationsList, setNotificationsList] = useState(initialNotifications);
-  const [pendingSync, setPendingSync] = useState<{ id: string; type: string; childName: string; action: string; time: string }[]>([]);
+  // Dynamic states for interactive simulator initialized from localStorage if available
+  const [childrenList, setChildrenList] = useState<any[]>(() => {
+    const local = localStorage.getItem('pratibha_children');
+    return local ? JSON.parse(local) : initialChildren;
+  });
+  const [scheduledActivities, setScheduledActivities] = useState<any[]>(() => {
+    const local = localStorage.getItem('pratibha_scheduled_activities');
+    return local ? JSON.parse(local) : [];
+  });
+  const [visitsList, setVisitsList] = useState<any[]>(() => {
+    const local = localStorage.getItem('pratibha_visits');
+    return local ? JSON.parse(local) : initialVisits;
+  });
+  const [notificationsList, setNotificationsList] = useState<any[]>(() => {
+    const local = localStorage.getItem('pratibha_notifications');
+    return local ? JSON.parse(local) : initialNotifications;
+  });
+  const [notificationCount, setNotificationCount] = useState<number>(() => {
+    const local = localStorage.getItem('pratibha_notifications');
+    const list = local ? JSON.parse(local) : initialNotifications;
+    return list.filter((n: any) => !n.read).length;
+  });
+  const [pendingSync, setPendingSync] = useState<{ id: string; type: string; childName: string; action: string; time: string }[]>(() => {
+    const local = localStorage.getItem('pratibha_pending_sync');
+    return local ? JSON.parse(local) : [];
+  });
+  
   const [workerName, setWorkerName] = useState('Sunita Ji');
   const [workerId, setWorkerId] = useState('AW-4521');
   const [anganwadiBlock, setAnganwadiBlock] = useState('Anganwadi Block 3');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [scale, setScale] = useState(0.8);
+
+  useEffect(() => {
+    const validateSession = async () => {
+      const token = localStorage.getItem('pratibha_jwt');
+      const rememberMe = localStorage.getItem('pratibha_remember_me') === 'true';
+      const pinEnabled = localStorage.getItem('pratibha_pin_enabled') === 'true';
+
+      const savedWorkerId = localStorage.getItem('pratibha_worker_id');
+      const savedWorkerName = localStorage.getItem('pratibha_worker_name');
+      const savedBlock = localStorage.getItem('pratibha_anganwadi_block');
+
+      if (savedWorkerId) setWorkerId(savedWorkerId);
+      if (savedWorkerName) setWorkerName(savedWorkerName);
+      if (savedBlock) setAnganwadiBlock(savedBlock);
+
+      if (token) {
+        try {
+          const response = await fetch(`${API_BASE}/auth/validate`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            if (data.valid && data.worker) {
+              setWorkerId(data.worker.id);
+              setWorkerName(data.worker.name);
+              setAnganwadiBlock(data.worker.block);
+              
+              localStorage.setItem('pratibha_worker_id', data.worker.id);
+              localStorage.setItem('pratibha_worker_name', data.worker.name);
+              localStorage.setItem('pratibha_anganwadi_block', data.worker.block);
+            }
+            if (pinEnabled) {
+              setScreen('login');
+            } else {
+              setScreen('home');
+              setActiveTab('home');
+            }
+          } else if (response.status === 401 || response.status === 403) {
+            // Token expired or invalid, log out
+            localStorage.removeItem('pratibha_jwt');
+            localStorage.removeItem('pratibha_remember_me');
+            localStorage.removeItem('pratibha_worker_id');
+            localStorage.removeItem('pratibha_worker_name');
+            localStorage.removeItem('pratibha_anganwadi_block');
+            localStorage.removeItem('pratibha_mobile');
+            setScreen('login');
+          } else {
+            // Other server error: fallback to local session if rememberMe is enabled
+            if (rememberMe) {
+              if (pinEnabled) {
+                setScreen('login');
+              } else {
+                setScreen('home');
+                setActiveTab('home');
+              }
+            } else {
+              setScreen('login');
+            }
+          }
+        } catch (err) {
+          console.warn('Session verification failed (server unreachable). Bypassing checks:', err);
+          // Offline bypass
+          if (rememberMe) {
+            if (pinEnabled) {
+              setScreen('login');
+            } else {
+              setScreen('home');
+              setActiveTab('home');
+            }
+          } else {
+            setScreen('login');
+          }
+        }
+      } else {
+        // No token
+        if (rememberMe) {
+          if (pinEnabled) {
+            setScreen('login');
+          } else {
+            setScreen('home');
+            setActiveTab('home');
+          }
+        }
+      }
+    };
+
+    validateSession();
+  }, []);
+
+  const loadDataFromServer = useCallback(async () => {
+    if (isOffline) return;
+    try {
+      const token = localStorage.getItem('pratibha_jwt');
+      if (!token) return;
+      
+      const serverChildren = await apiCall('/children');
+      setChildrenList(serverChildren);
+      
+      const serverVisits = await apiCall('/visits');
+      setVisitsList(serverVisits);
+      
+      const serverNotifications = await apiCall('/notifications');
+      setNotificationsList(serverNotifications);
+    } catch (err) {
+      console.warn('Backend server unreachable. Using local cache:', err);
+    }
+  }, [isOffline]);
+
+  useEffect(() => {
+    const isDashboard = ['home', 'children', 'activities', 'reports', 'ai-assistant', 'settings', 'home-visits', 'notifications', 'offline', 'impact'].includes(screen);
+    if (isDashboard) {
+      loadDataFromServer();
+    }
+  }, [screen, loadDataFromServer]);
+
+  // Write changes to localStorage to persist state data
+  useEffect(() => {
+    localStorage.setItem('pratibha_children', JSON.stringify(childrenList));
+  }, [childrenList]);
+
+  useEffect(() => {
+    localStorage.setItem('pratibha_scheduled_activities', JSON.stringify(scheduledActivities));
+  }, [scheduledActivities]);
+
+  useEffect(() => {
+    localStorage.setItem('pratibha_visits', JSON.stringify(visitsList));
+  }, [visitsList]);
+
+  useEffect(() => {
+    localStorage.setItem('pratibha_notifications', JSON.stringify(notificationsList));
+    const unread = notificationsList.filter((n: any) => !n.read).length;
+    setNotificationCount(unread);
+  }, [notificationsList]);
+
+  useEffect(() => {
+    localStorage.setItem('pratibha_pending_sync', JSON.stringify(pendingSync));
+  }, [pendingSync]);
+
+  useEffect(() => {
+    localStorage.setItem('pratibha_is_offline', String(isOffline));
+  }, [isOffline]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -104,8 +302,18 @@ function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+
+
   const navigateTo = useCallback(
     (newScreen: Screen) => {
+      if (newScreen === 'login') {
+        localStorage.removeItem('pratibha_remember_me');
+        localStorage.removeItem('pratibha_worker_id');
+        localStorage.removeItem('pratibha_worker_name');
+        localStorage.removeItem('pratibha_anganwadi_block');
+        localStorage.removeItem('pratibha_mobile');
+        localStorage.removeItem('pratibha_jwt');
+      }
       setPrevScreen(screen);
       setScreen(newScreen);
       if (screenToTab[newScreen]) {
@@ -141,6 +349,86 @@ function App() {
     setTimeout(() => setToast(null), 3000);
   }, []);
 
+  // Real-time background update simulation
+  useEffect(() => {
+    // Only run simulator if logged in (i.e. screen is a dashboard screen)
+    if (!['home', 'children', 'activities', 'reports', 'ai-assistant', 'settings', 'home-visits', 'notifications', 'offline', 'impact'].includes(screen)) return;
+
+    const interval = setInterval(() => {
+      const eventType = Math.floor(Math.random() * 3);
+      if (eventType === 0) {
+        // Parent notification event
+        const newNotif = {
+          id: 'n-sim-' + Date.now(),
+          title: language === 'hi' ? 'अभिभावक का संदेश' : language === 'bn' ? 'অভিভাবকের বার্তা' : language === 'mr' ? 'पालकांचा संदेश' : 'Parent Message',
+          message: language === 'hi' 
+            ? 'राजेश कुमार (आरव के पिता) ने गृह गतिविधि पूरी की।' 
+            : 'Rajesh Kumar (Aarav parent) logged a home activity.',
+          type: 'info' as const,
+          time: 'Just now',
+          read: false,
+          action: 'home-visits',
+        };
+        setNotificationsList(prev => [newNotif, ...prev]);
+        setNotificationCount(c => c + 1);
+        showToast(language === 'hi' ? 'नया अभिभावक अपडेट मिला!' : 'New parent update received!', 'info');
+
+        // Trigger native push notification
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          new Notification(newNotif.title, {
+            body: newNotif.message,
+            icon: '/splash-illustration.jpg'
+          });
+        }
+      } else if (eventType === 1) {
+        // Late arrival / attendance update
+        setChildrenList(prev => {
+          let updated = false;
+          const newList = prev.map(c => {
+            if (!updated && (c.attendance === 'absent' || c.attendance === 'irregular')) {
+              updated = true;
+              const text = language === 'hi' 
+                ? `${c.nameHindi || c.name} केंद्र पर पहुँच चुके हैं (देरी से आगमन)` 
+                : `${c.name} arrived late at the center (Checked In)`;
+              
+              showToast(text, 'success');
+              
+              // Trigger native push notification
+              if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                new Notification(language === 'hi' ? 'देरी से आगमन' : 'Late Check-In', {
+                  body: text,
+                  icon: '/splash-illustration.jpg'
+                });
+              }
+
+              // Add observation
+              const newObs = {
+                id: 'obs-sim-' + Date.now(),
+                date: 'Today',
+                note: language === 'hi' ? 'देरी से आगमन - उपस्थिति दर्ज की गई।' : 'Late arrival - checked in automatically.',
+                category: 'Attendance',
+                type: 'text' as const,
+              };
+              
+              return {
+                ...c,
+                attendance: 'present' as const,
+                observations: [newObs, ...c.observations]
+              };
+            }
+            return c;
+          });
+          return newList;
+        });
+      } else {
+        // Database Sync update
+        showToast(language === 'hi' ? 'पृष्ठभूमि डेटा सिंक पूरा हुआ!' : 'Background auto-sync complete!', 'success');
+      }
+    }, 35000); // every 35 seconds
+
+    return () => clearInterval(interval);
+  }, [screen, language, showToast]);
+
   const selectChild = useCallback(
     (childId: string) => {
       setSelectedChildId(childId);
@@ -175,18 +463,22 @@ function App() {
     });
   }, [showToast]);
 
-  const toggleAttendance = useCallback((childId: string) => {
+  const toggleAttendance = useCallback(async (childId: string) => {
+    let success = false;
+    let nextAttendance: 'present' | 'absent' | 'irregular' = 'present';
+    let childName = '';
+
     setChildrenList((prev) =>
       prev.map((c) => {
         if (c.id === childId) {
+          childName = c.name;
           const isCurrentlyPresent = c.attendance === 'present';
-          const nextAttendance = isCurrentlyPresent ? 'absent' : 'present';
+          nextAttendance = isCurrentlyPresent ? 'absent' : 'present';
           const nextHistory = [...c.attendanceHistory];
           if (nextHistory.length > 0) {
             nextHistory[nextHistory.length - 1] = !isCurrentlyPresent;
           }
           showToast(`${c.name} marked ${nextAttendance === 'present' ? 'Present' : 'Absent'}!`, 'info');
-          registerOfflineAction('Attendance', c.name, `Toggled attendance to ${nextAttendance}`);
           return {
             ...c,
             attendance: nextAttendance,
@@ -196,21 +488,41 @@ function App() {
         return c;
       })
     );
-  }, [showToast, registerOfflineAction]);
 
-  const addObservation = useCallback((childId: string, note: string, category: string) => {
+    if (!isOffline) {
+      try {
+        await apiCall('/children/attendance', {
+          method: 'PUT',
+          body: JSON.stringify({ childId, attendance: nextAttendance })
+        });
+        success = true;
+      } catch (err) {
+        console.warn('Failed to sync attendance with server. Storing offline action:', err);
+      }
+    }
+
+    if (!success) {
+      registerOfflineAction('Attendance', childName, `Toggled attendance to ${nextAttendance}`);
+    }
+  }, [showToast, registerOfflineAction, isOffline]);
+
+  const addObservation = useCallback(async (childId: string, note: string, category: string, type: 'voice' | 'text' | 'photo' = 'text', imageUrl?: string) => {
+    let success = false;
+    let childName = '';
+
     setChildrenList((prev) =>
       prev.map((c) => {
         if (c.id === childId) {
+          childName = c.name;
           const newObs = {
             id: 'obs-' + Date.now(),
             date: 'Today',
             note,
             category,
-            type: 'text' as const,
+            type,
+            ...(imageUrl ? { imageUrl } : {}),
           };
           showToast(`Added observation for ${c.name}!`, 'success');
-          registerOfflineAction('Observation', c.name, `Logged ${category} note`);
           return {
             ...c,
             observations: [newObs, ...c.observations],
@@ -219,24 +531,87 @@ function App() {
         return c;
       })
     );
-  }, [showToast, registerOfflineAction]);
 
-  const completeVisit = useCallback((visitId: string) => {
+    if (!isOffline) {
+      try {
+        await apiCall('/children/observation', {
+          method: 'POST',
+          body: JSON.stringify({ childId, note, category, type, imageUrl })
+        });
+        success = true;
+      } catch (err) {
+        console.warn('Failed to sync observation with server. Storing offline action:', err);
+      }
+    }
+
+    if (!success) {
+      registerOfflineAction('Observation', childName, `Logged ${category} note`);
+    }
+  }, [showToast, registerOfflineAction, isOffline]);
+
+  const completeVisit = useCallback(async (visitId: string) => {
+    let success = false;
+    let childName = '';
+
     setVisitsList((prev) =>
       prev.map((v) => {
         if (v.id === visitId) {
+          childName = v.childName;
           showToast(`Home visit for ${v.childName} marked complete!`, 'success');
-          registerOfflineAction('Home Visit', v.childName, 'Completed visit check-in');
           return { ...v, status: 'completed' as const };
         }
         return v;
       })
     );
-  }, [showToast, registerOfflineAction]);
 
-  const syncVoiceReport = useCallback(() => {
-    setChildrenList((prev) =>
-      prev.map((c) => {
+    if (!isOffline) {
+      try {
+        await apiCall(`/visits/${visitId}/complete`, {
+          method: 'PUT'
+        });
+        success = true;
+      } catch (err) {
+        console.warn('Failed to sync visit completion with server. Storing offline action:', err);
+      }
+    }
+
+    if (!success) {
+      registerOfflineAction('Home Visit', childName, 'Completed visit check-in');
+    }
+  }, [showToast, registerOfflineAction, isOffline]);
+
+  const syncVoiceReport = useCallback((reportData?: { 
+    childObservations: { name: string; note: string; category: string; isAlert?: boolean }[];
+    attendanceCount?: number;
+  }) => {
+    setChildrenList((prev) => {
+      if (reportData && reportData.childObservations && reportData.childObservations.length > 0) {
+        return prev.map((c) => {
+          const childNameLower = c.name.toLowerCase();
+          const match = reportData.childObservations.find(
+            (obs) => childNameLower.includes(obs.name.toLowerCase()) || obs.name.toLowerCase().includes(childNameLower)
+          );
+
+          if (match) {
+            const newObs = {
+              id: 'v-obs-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+              date: 'Today',
+              note: match.note,
+              category: match.category,
+              type: 'voice' as const,
+            };
+            return {
+              ...c,
+              needsAttention: match.isAlert ? true : c.needsAttention,
+              observations: [newObs, ...c.observations],
+              attendance: 'present' as const
+            };
+          }
+          return c;
+        });
+      }
+
+      return prev.map((c) => {
         if (c.id === '1') { 
           return {
             ...c,
@@ -266,21 +641,79 @@ function App() {
           };
         }
         return c;
-      })
-    );
-    showToast('Voice report synced to children records!', 'success');
-    registerOfflineAction('Voice Report', 'Multiple Children', 'Synced voice dictation transcript');
-  }, [showToast, registerOfflineAction]);
+      });
+    });
 
-  const handleAddVisit = useCallback((childName: string, parentName: string, lastVisit: string) => {
+    if (reportData?.attendanceCount !== undefined) {
+      const count = reportData.attendanceCount;
+      setChildrenList((prev) => {
+        const presentCount = prev.filter(c => c.attendance === 'present').length;
+        if (presentCount !== count) {
+          let diff = count - presentCount;
+          return prev.map((c) => {
+            if (diff > 0 && c.attendance !== 'present') {
+              diff--;
+              return { ...c, attendance: 'present' as const };
+            } else if (diff < 0 && c.attendance === 'present') {
+              diff++;
+              return { ...c, attendance: 'absent' as const };
+            }
+            return c;
+          });
+        }
+        return prev;
+      });
+    }
+
+    showToast(
+      language === 'hi' ? 'आवाज रिपोर्ट बच्चों के रिकॉर्ड में सिंक हो गई है!' : 'Voice report synced to children records!', 
+      'success'
+    );
+    registerOfflineAction('Voice Report', 'Multiple Children', 'Synced voice dictation transcript');
+  }, [showToast, registerOfflineAction, language]);
+
+  const handleScheduleActivity = useCallback(async (activityId: string, date: string, targetChildrenIds: string[]) => {
+    let success = false;
+    setScheduledActivities((prev) => [
+      ...prev,
+      {
+        id: 'sched-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+        activityId,
+        date,
+        targetChildrenIds,
+        completed: false,
+      }
+    ]);
+    const activityName = activities.find(a => a.id === activityId)?.title || 'Activity';
+    showToast(`${activityName} scheduled for ${date}!`, 'success');
+
+    if (!isOffline) {
+      try {
+        await apiCall('/activities/schedule', {
+          method: 'POST',
+          body: JSON.stringify({ activityId, date, targetChildrenIds })
+        });
+        success = true;
+      } catch (err) {
+        console.warn('Failed to sync scheduled activity with server. Storing offline action:', err);
+      }
+    }
+
+    if (!success) {
+      registerOfflineAction('Activity', 'Multiple Children', `Scheduled ${activityName} for ${date}`);
+    }
+  }, [showToast, registerOfflineAction, isOffline]);
+
+  const handleAddVisit = useCallback(async (childName: string, parentName: string, lastVisit: string, concern: string, suggestedTopics: string[]) => {
+    let success = false;
     const newVisit = {
       id: 'visit-' + Date.now(),
       childName,
       parentName,
       lastVisit,
       status: 'pending' as const,
-      concern: '',
-      suggestedTopics: [
+      concern: concern || 'General Care',
+      suggestedTopics: suggestedTopics && suggestedTopics.length > 0 ? suggestedTopics : [
         'Review language progress',
         'Discuss healthy snacks recipes',
         'Demonstrate simple counting games'
@@ -288,8 +721,23 @@ function App() {
     };
     setVisitsList(prev => [newVisit, ...prev]);
     showToast(`Home visit for ${childName} scheduled!`, 'success');
-    registerOfflineAction('Home Visit', childName, `Scheduled visit for ${lastVisit}`);
-  }, [showToast, registerOfflineAction]);
+
+    if (!isOffline) {
+      try {
+        await apiCall('/visits', {
+          method: 'POST',
+          body: JSON.stringify({ childName, parentName, lastVisit, concern, suggestedTopics })
+        });
+        success = true;
+      } catch (err) {
+        console.warn('Failed to sync scheduled visit with server. Storing offline action:', err);
+      }
+    }
+
+    if (!success) {
+      registerOfflineAction('Home Visit', childName, `Scheduled visit for ${lastVisit} (${concern || 'General'})`);
+    }
+  }, [showToast, registerOfflineAction, isOffline]);
 
   const handleResetData = useCallback(() => {
     setChildrenList(initialChildren);
@@ -303,16 +751,95 @@ function App() {
     showToast('Simulator sandbox reset to initial defaults!', 'success');
   }, [showToast]);
 
-  const handleSyncNow = useCallback(() => {
-    setPendingSync([]);
-    showToast('Database fully synced to central server!', 'success');
-  }, [showToast]);
+  const handleSyncNow = useCallback(async () => {
+    const count = pendingSync.length;
+    if (count === 0) {
+      showToast(language === 'hi' ? 'कोई लंबित डेटा सिंक करने के लिए नहीं है।' : 'No pending data to sync.', 'info');
+      return;
+    }
+
+    let success = false;
+    if (!isOffline) {
+      try {
+        const response = await apiCall('/sync', {
+          method: 'POST',
+          body: JSON.stringify({ operations: pendingSync })
+        });
+        
+        if (response.children) setChildrenList(response.children);
+        if (response.homeVisits) setVisitsList(response.homeVisits);
+        if (response.notifications) setNotificationsList(response.notifications);
+        if (response.scheduledActivities) setScheduledActivities(response.scheduledActivities);
+        
+        success = true;
+      } catch (err) {
+        console.warn('Failed to sync queue with server:', err);
+        showToast(language === 'hi' ? 'सिंक विफल - सर्वर अनुपलब्ध है' : 'Sync failed - server is unreachable', 'warning');
+      }
+    }
+
+    if (success || isOffline) {
+      setPendingSync([]);
+      
+      const syncNotif = {
+        id: 'n-sync-' + Date.now(),
+        title: 'Database Synced',
+        message: isOffline 
+          ? `Simulated sync: ${count} pending logs cleared locally.` 
+          : `${count} pending logs uploaded and synced with central Anganwadi server successfully.`,
+        type: 'success' as const,
+        time: 'Just now',
+        read: false,
+      };
+      setNotificationsList(prev => [syncNotif, ...prev]);
+      
+      showToast(
+        language === 'hi' 
+          ? 'डेटाबेस सफलतापूर्वक सिंक हो गया!' 
+          : 'Database fully synced!', 
+        'success'
+      );
+    }
+  }, [showToast, pendingSync, language, isOffline]);
 
   const handleClearNotifications = useCallback(() => {
     setNotificationsList([]);
     setNotificationCount(0);
     showToast('Notification center cleared!', 'info');
   }, [showToast]);
+
+  const handleMarkNotificationsRead = useCallback(async () => {
+    let hadUnread = false;
+    setNotificationsList((prev) => {
+      const hasUnread = prev.some((n: any) => !n.read);
+      if (!hasUnread) return prev;
+      hadUnread = true;
+      return prev.map((n: any) => ({ ...n, read: true }));
+    });
+
+    if (hadUnread && !isOffline) {
+      try {
+        await apiCall('/notifications/read-all', {
+          method: 'PUT',
+        });
+      } catch (err) {
+        console.warn('Failed to sync notification read status with server:', err);
+      }
+    }
+  }, [isOffline]);
+
+  const handleDeleteNotification = useCallback(async (id: string) => {
+    setNotificationsList((prev) => prev.filter((n: any) => n.id !== id));
+    if (!isOffline) {
+      try {
+        await apiCall(`/notifications/${id}`, {
+          method: 'DELETE',
+        });
+      } catch (err) {
+        console.warn('Failed to delete notification on server:', err);
+      }
+    }
+  }, [isOffline]);
 
   const showNavTabs = ['home', 'children', 'activities', 'reports', 'ai-assistant'].includes(screen);
 
@@ -388,19 +915,39 @@ function App() {
               </div>
             )}
             <main className="flex-1 overflow-y-auto scrollbar-hide dark:bg-slate-950">
-              {screen === 'splash' && <SplashScreen onStart={() => navigateTo('login')} />}
+              {screen === 'splash' && <SplashScreen onStart={() => navigateTo('language')} />}
               {screen === 'language' && (
                 <LanguageScreen
                   selected={language}
-                  onSelect={setLanguage}
+                  onSelect={(code) => setLanguage(code as LanguageCode)}
                   onContinue={() => navigateTo('login')}
                 />
               )}
               {screen === 'login' && (
                 <LoginScreen
-                  onLogin={() => {
-                    showToast(`Welcome ${workerName}!`, 'success');
+                  onLogin={(id, mob, remember) => {
+                    const name = localStorage.getItem('pratibha_worker_name') || (id === 'AW-1234' ? 'Saraswati Devi' : (id === 'AW-4521' ? 'Sunita Ji' : 'Anganwadi Worker'));
+                    const block = localStorage.getItem('pratibha_anganwadi_block') || 'Anganwadi Block 3';
+                    setWorkerId(id);
+                    setWorkerName(name);
+                    setAnganwadiBlock(block);
+                    
+                    if (remember) {
+                      localStorage.setItem('pratibha_remember_me', 'true');
+                      localStorage.setItem('pratibha_worker_id', id);
+                      localStorage.setItem('pratibha_worker_name', name);
+                      localStorage.setItem('pratibha_anganwadi_block', block);
+                      localStorage.setItem('pratibha_mobile', mob);
+                    } else {
+                      localStorage.removeItem('pratibha_remember_me');
+                      localStorage.removeItem('pratibha_worker_id');
+                      localStorage.removeItem('pratibha_worker_name');
+                      localStorage.removeItem('pratibha_anganwadi_block');
+                      localStorage.removeItem('pratibha_mobile');
+                    }
+                    showToast(t('namaste', { name }), 'success');
                     navigateTo('home');
+                    loadDataFromServer();
                   }}
                 />
               )}
@@ -437,20 +984,26 @@ function App() {
               {screen === 'voice-report' && (
                 <VoiceReportScreen
                   onBack={goBack}
-                  onComplete={() => {
-                    syncVoiceReport();
+                  onComplete={(reportData) => {
+                    syncVoiceReport(reportData);
                     goBack();
                   }}
                 />
               )}
               {screen === 'activities' && (
-                <ActivitiesScreen onBack={goBack} />
+                <ActivitiesScreen
+                  onBack={goBack}
+                  childrenList={childrenList}
+                  scheduledActivities={scheduledActivities}
+                  onScheduleActivity={handleScheduleActivity}
+                  showToast={showToast}
+                />
               )}
               {screen === 'ai-assistant' && (
-                <AiAssistantScreen onBack={goBack} />
+                <AiAssistantScreen onBack={goBack} childrenList={childrenList} />
               )}
               {screen === 'reports' && (
-                <ReportsScreen onBack={goBack} onNavigate={navigateTo} />
+                <ReportsScreen onBack={goBack} onNavigate={navigateTo} childrenList={childrenList} />
               )}
               {screen === 'home-visits' && (
                 <HomeVisitsScreen
@@ -465,9 +1018,10 @@ function App() {
                 <NotificationsScreen
                   onBack={goBack}
                   onNavigate={navigateTo}
-                  onRead={() => setNotificationCount(0)}
+                  onRead={handleMarkNotificationsRead}
                   notificationsList={notificationsList}
                   onClearNotifications={handleClearNotifications}
+                  onDeleteNotification={handleDeleteNotification}
                 />
               )}
               {screen === 'offline' && (
@@ -479,7 +1033,12 @@ function App() {
                 />
               )}
               {screen === 'impact' && (
-                <ImpactScreen onBack={goBack} />
+                <ImpactScreen
+                  onBack={goBack}
+                  childrenList={childrenList}
+                  visitsList={visitsList}
+                  scheduledActivities={scheduledActivities}
+                />
               )}
               {screen === 'settings' && (
                 <SettingsScreen
@@ -531,6 +1090,14 @@ function App() {
       </div>
     </div>
   </div>
+  );
+}
+
+function App() {
+  return (
+    <LanguageProvider>
+      <AppContent />
+    </LanguageProvider>
   );
 }
 

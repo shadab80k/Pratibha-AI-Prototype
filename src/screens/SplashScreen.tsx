@@ -5,16 +5,34 @@ interface SplashScreenProps {
   onStart: () => void;
 }
 
+const slides = [
+  {
+    image: '/splash-illustration.jpg',
+    text: 'Less paperwork. More child engagement.'
+  },
+  {
+    image: '/splash-illustration-2.png',
+    text: 'Interactive growth monitoring & milestones.'
+  },
+  {
+    image: '/splash-illustration-3.png',
+    text: 'Seamless home visits and real-time AI help.'
+  }
+];
+
 export function SplashScreen({ onStart }: SplashScreenProps) {
   const [loaded, setLoaded] = useState(false);
-  const [pulsing, setPulsing] = useState(false);
+  const [currentSlide, setCurrentSlide] = useState(0);
 
   useEffect(() => {
     const t1 = setTimeout(() => setLoaded(true), 300);
-    const t2 = setTimeout(() => setPulsing(true), 800);
+    const slideTimer = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % slides.length);
+    }, 3000);
+    
     return () => {
       clearTimeout(t1);
-      clearTimeout(t2);
+      clearInterval(slideTimer);
     };
   }, []);
 
@@ -32,23 +50,32 @@ export function SplashScreen({ onStart }: SplashScreenProps) {
         <h1 className="text-3xl font-bold text-gray-800 dark:text-white tracking-tight">Pratibha AI</h1>
       </div>
 
-      {/* Middle section - Illustration */}
+      {/* Middle section - Illustration Slider */}
       <div
         className={`flex-1 flex items-center justify-center w-full max-w-[320px] transition-all duration-700 delay-200 ${
           loaded ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
         }`}
       >
-        <div className="relative w-full">
-          <img
-            src="/splash-illustration.jpg"
-            alt="Anganwadi worker with children"
-            className="w-full h-auto rounded-3xl shadow-xl object-cover"
-          />
-          <div className="absolute -bottom-3 left-4 right-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm rounded-xl px-4 py-3 shadow-lg border border-transparent dark:border-slate-800">
-            <p className="text-center text-gray-700 dark:text-slate-200 font-medium text-sm">
-              Less paperwork. More child engagement.
-            </p>
-          </div>
+        <div className="relative w-full h-[320px] overflow-hidden rounded-3xl shadow-xl">
+          {slides.map((slide, idx) => (
+            <div
+              key={idx}
+              className={`absolute inset-0 transition-all duration-700 ease-in-out ${
+                idx === currentSlide ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'
+              }`}
+            >
+              <img
+                src={slide.image}
+                alt="Anganwadi illustration"
+                className="w-full h-full object-cover rounded-3xl"
+              />
+              <div className="absolute bottom-3 left-4 right-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm rounded-xl px-4 py-3 shadow-lg border border-transparent dark:border-slate-800">
+                <p className="text-center text-gray-700 dark:text-slate-200 font-medium text-sm leading-snug">
+                  {slide.text}
+                </p>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -58,10 +85,18 @@ export function SplashScreen({ onStart }: SplashScreenProps) {
           loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
         }`}
       >
-        <div className="flex items-center justify-center gap-2 mb-4">
-          <div className={`w-2 h-2 rounded-full bg-orange-400 ${pulsing ? 'animate-pulse' : ''}`} />
-          <div className={`w-2 h-2 rounded-full bg-orange-300 ${pulsing ? 'animate-pulse delay-75' : ''}`} />
-          <div className={`w-2 h-2 rounded-full bg-orange-200 ${pulsing ? 'animate-pulse delay-150' : ''}`} />
+        {/* Navigation Indicator Dots */}
+        <div className="flex items-center justify-center gap-2.5 mb-5">
+          {slides.map((_, idx) => (
+            <button
+              key={idx}
+              onClick={() => setCurrentSlide(idx)}
+              className={`h-2.5 rounded-full transition-all duration-300 ${
+                idx === currentSlide ? 'w-6 bg-orange-500' : 'w-2.5 bg-orange-200 dark:bg-slate-800'
+              }`}
+              aria-label={`Go to slide ${idx + 1}`}
+            />
+          ))}
         </div>
 
         <button

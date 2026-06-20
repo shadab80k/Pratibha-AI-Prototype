@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import {
   X,
   Calendar,
@@ -12,6 +11,7 @@ import {
   Settings,
 } from 'lucide-react';
 import type { Screen } from '../App';
+import { useLanguage } from '../context/LanguageContext';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -27,6 +27,14 @@ interface SidebarProps {
   anganwadiBlock: string;
 }
 
+const menuKeys: Record<string, any> = {
+  'Home Visits Planner': 'homeVisits',
+  'Impact & Analytics': 'impact',
+  'Offline Sync Center': 'offlineSync',
+  'Notifications Hub': 'notifications',
+  'Settings & Preferences': 'settings',
+};
+
 export function Sidebar({
   isOpen,
   onClose,
@@ -40,18 +48,7 @@ export function Sidebar({
   workerId,
   anganwadiBlock,
 }: SidebarProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) {
-      setMounted(true);
-    } else {
-      const timer = setTimeout(() => setMounted(false), 300);
-      return () => clearTimeout(timer);
-    }
-  }, [isOpen]);
-
-  if (!mounted && !isOpen) return null;
+  const { t } = useLanguage();
 
   const menuItems = [
     { label: 'Home Visits Planner', screen: 'home-visits' as Screen, icon: Calendar },
@@ -62,19 +59,21 @@ export function Sidebar({
   ];
 
   return (
-    <div className="absolute inset-0 z-50 overflow-hidden rounded-[40px] pointer-events-none select-none">
+    <div className={`absolute inset-0 z-50 overflow-hidden rounded-[40px] select-none transition-all duration-300 ${
+      isOpen ? 'pointer-events-auto' : 'pointer-events-none'
+    }`}>
       {/* Backdrop overlay */}
       <div
         onClick={onClose}
-        className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300 pointer-events-auto rounded-[40px] ${
-          isOpen ? 'opacity-100' : 'opacity-0'
+        className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300 rounded-[40px] ${
+          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
       />
 
       {/* Side Menu Drawer */}
       <div
-        className={`absolute top-0 left-0 h-full w-[255px] bg-white dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 shadow-2xl flex flex-col pointer-events-auto rounded-l-[40px] transition-transform duration-300 ease-out select-none ${
-          isOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`absolute top-0 left-0 h-full w-[255px] bg-white dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 shadow-2xl flex flex-col rounded-l-[40px] transition-transform duration-300 ease-out select-none ${
+          isOpen ? 'translate-x-0 pointer-events-auto' : '-translate-x-full pointer-events-none'
         } ${isDarkMode ? 'dark text-white' : 'text-slate-800'}`}
       >
         {/* Header Profile Section */}
@@ -94,7 +93,7 @@ export function Sidebar({
             />
             <div>
               <h3 className="font-bold text-base leading-tight">{workerName}</h3>
-              <p className="text-[10px] text-orange-100 font-medium">Worker ID: {workerId}</p>
+              <p className="text-[10px] text-orange-100 font-medium">{t('workerId')}: {workerId}</p>
               <span className="inline-block mt-1 text-[9px] bg-white/20 px-2 py-0.5 rounded-full font-medium">
                 {anganwadiBlock}
               </span>
@@ -106,7 +105,7 @@ export function Sidebar({
         <div className="flex-1 overflow-y-auto px-4 py-6 space-y-5 scrollbar-hide dark:bg-slate-900">
           <div>
             <p className="text-[9px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-bold px-3 mb-2.5">
-              Tools & Planners
+              {t('toolsTitle')}
             </p>
             <div className="space-y-1">
               {menuItems.map((item) => {
@@ -122,11 +121,11 @@ export function Sidebar({
                     className={`w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-left transition-all active:scale-[0.98] ${
                       isActive
                         ? 'bg-orange-500 text-white shadow-md shadow-orange-500/20'
-                        : 'text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-800'
+                        : 'text-slate-650 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-800'
                     }`}
                   >
                     <Icon size={16} strokeWidth={isActive ? 2.5 : 1.8} />
-                    {item.label}
+                    {t(menuKeys[item.label] || item.label)}
                   </button>
                 );
               })}
@@ -135,7 +134,7 @@ export function Sidebar({
 
           <div className="border-t border-slate-100 dark:border-slate-800/80 pt-4">
             <p className="text-[9px] uppercase tracking-wider text-slate-400 dark:text-slate-500 font-bold px-3 mb-3">
-              Simulator Toggles
+              {t('togglesTitle')}
             </p>
             <div className="space-y-2">
               {/* Dark Mode Toggle */}
@@ -143,9 +142,9 @@ export function Sidebar({
                 onClick={onToggleDarkMode}
                 className="w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-transparent dark:border-slate-850/50 active:scale-[0.98] transition-all cursor-pointer"
               >
-                <span className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-350">
+                <span className="flex items-center gap-2 text-xs font-semibold text-slate-650 dark:text-slate-350">
                   {isDarkMode ? <Moon size={14} className="text-amber-400" /> : <Sun size={14} className="text-orange-500" />}
-                  Dark Theme
+                  {t('darkTheme')}
                 </span>
                 <div
                   className={`w-9 h-[22px] rounded-full transition-colors duration-300 relative shrink-0 ${
@@ -165,9 +164,9 @@ export function Sidebar({
                 onClick={onToggleOffline}
                 className="w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-transparent dark:border-slate-850/50 active:scale-[0.98] transition-all cursor-pointer"
               >
-                <span className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-350">
+                <span className="flex items-center gap-2 text-xs font-semibold text-slate-650 dark:text-slate-350">
                   {isOffline ? <CloudOff size={14} className="text-slate-400" /> : <Wifi size={14} className="text-emerald-500" />}
-                  Offline Sync
+                  {t('offlineSync')}
                 </span>
                 <div
                   className={`w-9 h-[22px] rounded-full transition-colors duration-300 relative shrink-0 ${
@@ -195,7 +194,7 @@ export function Sidebar({
             className="w-full flex items-center justify-center gap-2 h-10 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-950/30 text-red-650 dark:text-red-400 rounded-xl text-xs font-semibold active:scale-[0.98] transition-all"
           >
             <LogOut size={14} />
-            Logout from Account
+            {t('logout')}
           </button>
           <p className="text-center text-[9px] text-slate-400 dark:text-slate-500 font-semibold tracking-wider uppercase">
             Pratibha AI v1.2.0

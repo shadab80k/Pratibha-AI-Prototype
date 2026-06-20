@@ -16,6 +16,10 @@ export function OfflineScreen({ onBack, isOffline, pendingSync, onSync }: Offlin
       alert("Cannot synchronize database while Simulator Offline Mode is enabled! Please open the side panel and turn OFF Offline Sync first.");
       return;
     }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      alert("Your browser is offline! Please check your network/internet connection and try again.");
+      return;
+    }
     setSyncing(true);
     setTimeout(() => {
       onSync();

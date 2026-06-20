@@ -8,17 +8,22 @@ interface LanguageScreenProps {
 }
 
 export function LanguageScreen({ selected, onSelect, onContinue }: LanguageScreenProps) {
+  // Only allow English and Hindi
+  const filteredLanguages = languageOptions.filter(
+    (lang) => lang.code === 'en' || lang.code === 'hi'
+  );
+
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-orange-50 to-white dark:from-slate-900 dark:to-slate-950 px-6 py-8 transition-colors duration-300">
       {/* Header */}
       <div className="mt-8 mb-8">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Choose Your Language</h1>
-        <p className="text-gray-505 dark:text-slate-400 mt-1">अपनी भाषा चुनें / তোমার ভাষা চয়ন কর</p>
+        <p className="text-gray-505 dark:text-slate-400 mt-1">अपनी भाषा चुनें / Choose Your Language</p>
       </div>
 
       {/* Language Cards */}
       <div className="flex-1 space-y-3">
-        {languageOptions.map((lang) => {
+        {filteredLanguages.map((lang) => {
           const isSelected = selected === lang.code;
           return (
             <button

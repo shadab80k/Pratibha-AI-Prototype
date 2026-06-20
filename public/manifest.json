@@ -1,0 +1,18 @@
+{
+  "name": "Pratibha AI - Anganwadi Assistant",
+  "short_name": "Pratibha AI",
+  "description": "Smart assistant for Anganwadi workers supporting offline observation tracking, milestone checklists, and voice reporting.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#f97316",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/splash-illustration.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
