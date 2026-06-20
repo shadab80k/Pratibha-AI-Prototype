@@ -32,7 +32,7 @@ export function OfflineScreen({ onBack, isOffline, pendingSync, onSync }: Offlin
       {/* Header */}
       <header className="bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800 px-4 pt-10 pb-3 shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="p-2 -ml-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition-all text-gray-700 dark:text-slate-350">
+          <button onClick={onBack} className="p-2 -ml-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition-all text-gray-700 dark:text-slate-300">
             <ArrowLeft size={20} />
           </button>
           <h1 className="text-xl font-bold text-gray-800 dark:text-white">Offline Sync</h1>
@@ -74,7 +74,7 @@ export function OfflineScreen({ onBack, isOffline, pendingSync, onSync }: Offlin
         {/* Pending Sync Items List */}
         <div className="w-full max-w-[320px] space-y-2 mb-6 shrink-0 flex-1 overflow-y-auto scrollbar-hide">
           {pendingSync.map((item) => (
-            <div key={item.id} className="flex items-center gap-3 p-3 bg-white dark:bg-slate-900 rounded-xl border border-gray-150 dark:border-slate-800 shadow-sm animate-slideDown">
+            <div key={item.id} className="flex items-center gap-3 p-3 bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 shadow-sm animate-slideDown">
               <div className="w-8 h-8 rounded-lg bg-orange-100 dark:bg-orange-950/30 flex items-center justify-center shrink-0">
                 <Database size={14} className="text-orange-500 dark:text-orange-400" />
               </div>
@@ -94,7 +94,7 @@ export function OfflineScreen({ onBack, isOffline, pendingSync, onSync }: Offlin
             <div className="flex flex-col items-center justify-center py-10 bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800/80 rounded-2xl p-4 text-center">
               <CheckCircle2 size={36} className="text-emerald-500 mb-3" />
               <p className="text-xs font-semibold text-gray-800 dark:text-white">Database Synced</p>
-              <p className="text-[10px] text-gray-400 dark:text-slate-550 max-w-[200px] mt-1 leading-relaxed">
+              <p className="text-[10px] text-gray-400 dark:text-slate-500 max-w-[200px] mt-1 leading-relaxed">
                 All attendance logs, observation cards, and home visits are safely synced to the central Anganwadi server.
               </p>
             </div>
@@ -106,7 +106,7 @@ export function OfflineScreen({ onBack, isOffline, pendingSync, onSync }: Offlin
           <div className="flex items-center gap-3 mb-3">
             <Database size={18} className="text-gray-500 dark:text-slate-400" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-gray-700 dark:text-slate-350">On-Device Storage</p>
+              <p className="text-sm font-medium text-gray-700 dark:text-slate-300">On-Device Storage</p>
               <p className="text-[10px] text-gray-400 dark:text-slate-500 font-medium">
                 {pendingSync.length > 0 ? `${(2.4 + pendingSync.length * 0.1).toFixed(1)} MB` : '2.4 MB'} used of 50 MB
               </p>
@@ -137,7 +137,7 @@ export function OfflineScreen({ onBack, isOffline, pendingSync, onSync }: Offlin
       <div className="shrink-0 p-4 bg-white dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800">
         <div className="flex items-center justify-center gap-2 text-center">
           <div className={`w-2 h-2 rounded-full shrink-0 ${isOffline ? 'bg-red-400' : 'bg-emerald-500 animate-pulse'}`} />
-          <p className="text-xs text-gray-550 dark:text-slate-400">
+          <p className="text-xs text-gray-500 dark:text-slate-400">
             {isOffline 
               ? 'Toggle Offline Sync OFF in sidebar settings to authorize upload.' 
               : 'Safe SSL handshake enabled. Ready to upload local queue.'}

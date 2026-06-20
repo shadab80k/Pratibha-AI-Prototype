@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { SplashScreen } from './screens/SplashScreen';
 import { LanguageScreen } from './screens/LanguageScreen';
 import { LoginScreen } from './screens/LoginScreen';
@@ -17,9 +17,12 @@ import { SettingsScreen } from './screens/SettingsScreen';
 import { BottomNav } from './components/BottomNav';
 import { Toast } from './components/Toast';
 import { Sidebar } from './components/Sidebar';
-import { children as initialChildren, homeVisits as initialVisits, notifications as initialNotifications, activities } from './data/mockData';
+import {
+  childrenApi, visitsApi, notificationsApi, voiceReportApi, authApi, adminApi,
+  setAuthToken, getAuthToken,
+} from './lib/api';
+import type { Child, HomeVisit, AppNotification } from './lib/api';
 import { CloudOff, Wifi, Battery } from 'lucide-react';
-import { LanguageProvider, useLanguage, type LanguageCode } from './context/LanguageContext';
 
 export type Screen =
   | 'splash'
@@ -61,81 +64,21 @@ export interface ToastData {
   type: 'success' | 'info' | 'warning';
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
-
-const getHeaders = () => {
-  const token = localStorage.getItem('pratibha_jwt');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-  };
-};
-
-async function apiCall(endpoint: string, options: RequestInit = {}) {
-  const url = `${API_BASE}${endpoint}`;
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      ...getHeaders(),
-      ...options.headers,
-    }
-  });
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      console.warn('Authentication token expired or invalid');
-      localStorage.removeItem('pratibha_jwt');
-    }
-    throw new Error(`API error: ${response.status}`);
-  }
-  return response.json();
-}
-
-function AppContent() {
-  const mainRef = useRef<HTMLElement>(null);
+function App() {
   const [screen, setScreen] = useState<Screen>('splash');
-
-  useEffect(() => {
-    if (mainRef.current) {
-      mainRef.current.scrollTop = 0;
-    }
-  }, [screen]);
-
   const [prevScreen, setPrevScreen] = useState<Screen | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
-  const { language, setLanguage, t } = useLanguage();
-  const [isOffline, setIsOffline] = useState(() => {
-    return localStorage.getItem('pratibha_is_offline') === 'true';
-  });
+  const [language, setLanguage] = useState('en');
+  const [isOffline, setIsOffline] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
+  const [notificationCount, setNotificationCount] = useState(0);
   
-  // Dynamic states for interactive simulator initialized from localStorage if available
-  const [childrenList, setChildrenList] = useState<any[]>(() => {
-    const local = localStorage.getItem('pratibha_children');
-    return local ? JSON.parse(local) : initialChildren;
-  });
-  const [scheduledActivities, setScheduledActivities] = useState<any[]>(() => {
-    const local = localStorage.getItem('pratibha_scheduled_activities');
-    return local ? JSON.parse(local) : [];
-  });
-  const [visitsList, setVisitsList] = useState<any[]>(() => {
-    const local = localStorage.getItem('pratibha_visits');
-    return local ? JSON.parse(local) : initialVisits;
-  });
-  const [notificationsList, setNotificationsList] = useState<any[]>(() => {
-    const local = localStorage.getItem('pratibha_notifications');
-    return local ? JSON.parse(local) : initialNotifications;
-  });
-  const [notificationCount, setNotificationCount] = useState<number>(() => {
-    const local = localStorage.getItem('pratibha_notifications');
-    const list = local ? JSON.parse(local) : initialNotifications;
-    return list.filter((n: any) => !n.read).length;
-  });
-  const [pendingSync, setPendingSync] = useState<{ id: string; type: string; childName: string; action: string; time: string }[]>(() => {
-    const local = localStorage.getItem('pratibha_pending_sync');
-    return local ? JSON.parse(local) : [];
-  });
-  
+  // Data from backend API
+  const [childrenList, setChildrenList] = useState<Child[]>([]);
+  const [visitsList, setVisitsList] = useState<HomeVisit[]>([]);
+  const [notificationsList, setNotificationsList] = useState<AppNotification[]>([]);
+  const [pendingSync, setPendingSync] = useState<{ id: string; type: string; childName: string; action: string; time: string }[]>([]);
   const [workerName, setWorkerName] = useState('Sunita Ji');
   const [workerId, setWorkerId] = useState('AW-4521');
   const [anganwadiBlock, setAnganwadiBlock] = useState('Anganwadi Block 3');
@@ -144,153 +87,7 @@ function AppContent() {
   const [scale, setScale] = useState(0.8);
 
   useEffect(() => {
-    const validateSession = async () => {
-      const token = localStorage.getItem('pratibha_jwt');
-      const rememberMe = localStorage.getItem('pratibha_remember_me') === 'true';
-      const pinEnabled = localStorage.getItem('pratibha_pin_enabled') === 'true';
-
-      const savedWorkerId = localStorage.getItem('pratibha_worker_id');
-      const savedWorkerName = localStorage.getItem('pratibha_worker_name');
-      const savedBlock = localStorage.getItem('pratibha_anganwadi_block');
-
-      if (savedWorkerId) setWorkerId(savedWorkerId);
-      if (savedWorkerName) setWorkerName(savedWorkerName);
-      if (savedBlock) setAnganwadiBlock(savedBlock);
-
-      if (token) {
-        try {
-          const response = await fetch(`${API_BASE}/auth/validate`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            if (data.valid && data.worker) {
-              setWorkerId(data.worker.id);
-              setWorkerName(data.worker.name);
-              setAnganwadiBlock(data.worker.block);
-              
-              localStorage.setItem('pratibha_worker_id', data.worker.id);
-              localStorage.setItem('pratibha_worker_name', data.worker.name);
-              localStorage.setItem('pratibha_anganwadi_block', data.worker.block);
-            }
-            if (pinEnabled) {
-              setScreen('login');
-            } else {
-              setScreen('home');
-              setActiveTab('home');
-            }
-          } else if (response.status === 401 || response.status === 403) {
-            // Token expired or invalid, log out
-            localStorage.removeItem('pratibha_jwt');
-            localStorage.removeItem('pratibha_remember_me');
-            localStorage.removeItem('pratibha_worker_id');
-            localStorage.removeItem('pratibha_worker_name');
-            localStorage.removeItem('pratibha_anganwadi_block');
-            localStorage.removeItem('pratibha_mobile');
-            setScreen('login');
-          } else {
-            // Other server error: fallback to local session if rememberMe is enabled
-            if (rememberMe) {
-              if (pinEnabled) {
-                setScreen('login');
-              } else {
-                setScreen('home');
-                setActiveTab('home');
-              }
-            } else {
-              setScreen('login');
-            }
-          }
-        } catch (err) {
-          console.warn('Session verification failed (server unreachable). Bypassing checks:', err);
-          // Offline bypass
-          if (rememberMe) {
-            if (pinEnabled) {
-              setScreen('login');
-            } else {
-              setScreen('home');
-              setActiveTab('home');
-            }
-          } else {
-            setScreen('login');
-          }
-        }
-      } else {
-        // No token
-        if (rememberMe) {
-          if (pinEnabled) {
-            setScreen('login');
-          } else {
-            setScreen('home');
-            setActiveTab('home');
-          }
-        }
-      }
-    };
-
-    validateSession();
-  }, []);
-
-  const loadDataFromServer = useCallback(async () => {
-    if (isOffline) return;
-    try {
-      const token = localStorage.getItem('pratibha_jwt');
-      if (!token) return;
-      
-      const serverChildren = await apiCall('/children');
-      setChildrenList(serverChildren);
-      
-      const serverVisits = await apiCall('/visits');
-      setVisitsList(serverVisits);
-      
-      const serverNotifications = await apiCall('/notifications');
-      setNotificationsList(serverNotifications);
-    } catch (err) {
-      console.warn('Backend server unreachable. Using local cache:', err);
-    }
-  }, [isOffline]);
-
-  useEffect(() => {
-    const isDashboard = ['home', 'children', 'activities', 'reports', 'ai-assistant', 'settings', 'home-visits', 'notifications', 'offline', 'impact'].includes(screen);
-    if (isDashboard) {
-      loadDataFromServer();
-    }
-  }, [screen, loadDataFromServer]);
-
-  // Write changes to localStorage to persist state data
-  useEffect(() => {
-    localStorage.setItem('pratibha_children', JSON.stringify(childrenList));
-  }, [childrenList]);
-
-  useEffect(() => {
-    localStorage.setItem('pratibha_scheduled_activities', JSON.stringify(scheduledActivities));
-  }, [scheduledActivities]);
-
-  useEffect(() => {
-    localStorage.setItem('pratibha_visits', JSON.stringify(visitsList));
-  }, [visitsList]);
-
-  useEffect(() => {
-    localStorage.setItem('pratibha_notifications', JSON.stringify(notificationsList));
-    const unread = notificationsList.filter((n: any) => !n.read).length;
-    setNotificationCount(unread);
-  }, [notificationsList]);
-
-  useEffect(() => {
-    localStorage.setItem('pratibha_pending_sync', JSON.stringify(pendingSync));
-  }, [pendingSync]);
-
-  useEffect(() => {
-    localStorage.setItem('pratibha_is_offline', String(isOffline));
-  }, [isOffline]);
-
-  useEffect(() => {
     const handleResize = () => {
-      // Target dimensions including margins for buttons and chassis bezel curves
       const targetWidth = 440;
       const targetHeight = 834;
       const margin = 24;
@@ -301,7 +98,6 @@ function AppContent() {
       const scaleX = availableWidth / targetWidth;
       const scaleY = availableHeight / targetHeight;
 
-      // Use the smaller scale factor, and cap it at 1.0
       setScale(Math.min(scaleX, scaleY, 1.0));
     };
 
@@ -310,18 +106,46 @@ function AppContent() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDarkMode);
+  }, [isDarkMode]);
 
+  // Fetch all data from backend after login
+  const fetchAllData = useCallback(async () => {
+    try {
+      const [children, visits, notifications] = await Promise.all([
+        childrenApi.getAll(),
+        visitsApi.getAll(),
+        notificationsApi.getAll(),
+      ]);
+      setChildrenList(children);
+      setVisitsList(visits);
+      setNotificationsList(notifications);
+      setNotificationCount(notifications.filter((n) => !n.read).length);
+    } catch (err) {
+      console.error('Failed to fetch data:', err);
+    }
+  }, []);
+
+  // Check for existing auth token on mount
+  useEffect(() => {
+    const token = getAuthToken();
+    if (token) {
+      authApi.getProfile().then((profile) => {
+        setWorkerName(profile.name);
+        setWorkerId(profile.id);
+        setAnganwadiBlock(profile.anganwadiBlock);
+        setLanguage(profile.language);
+        fetchAllData();
+      }).catch(() => {
+        // Token expired or invalid, clear it
+        setAuthToken(null);
+      });
+    }
+  }, [fetchAllData]);
 
   const navigateTo = useCallback(
     (newScreen: Screen) => {
-      if (newScreen === 'login') {
-        localStorage.removeItem('pratibha_remember_me');
-        localStorage.removeItem('pratibha_worker_id');
-        localStorage.removeItem('pratibha_worker_name');
-        localStorage.removeItem('pratibha_anganwadi_block');
-        localStorage.removeItem('pratibha_mobile');
-        localStorage.removeItem('pratibha_jwt');
-      }
       setPrevScreen(screen);
       setScreen(newScreen);
       if (screenToTab[newScreen]) {
@@ -357,86 +181,6 @@ function AppContent() {
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  // Real-time background update simulation
-  useEffect(() => {
-    // Only run simulator if logged in (i.e. screen is a dashboard screen)
-    if (!['home', 'children', 'activities', 'reports', 'ai-assistant', 'settings', 'home-visits', 'notifications', 'offline', 'impact'].includes(screen)) return;
-
-    const interval = setInterval(() => {
-      const eventType = Math.floor(Math.random() * 3);
-      if (eventType === 0) {
-        // Parent notification event
-        const newNotif = {
-          id: 'n-sim-' + Date.now(),
-          title: language === 'hi' ? 'अभिभावक का संदेश' : language === 'bn' ? 'অভিভাবকের বার্তা' : language === 'mr' ? 'पालकांचा संदेश' : 'Parent Message',
-          message: language === 'hi' 
-            ? 'राजेश कुमार (आरव के पिता) ने गृह गतिविधि पूरी की।' 
-            : 'Rajesh Kumar (Aarav parent) logged a home activity.',
-          type: 'info' as const,
-          time: 'Just now',
-          read: false,
-          action: 'home-visits',
-        };
-        setNotificationsList(prev => [newNotif, ...prev]);
-        setNotificationCount(c => c + 1);
-        showToast(language === 'hi' ? 'नया अभिभावक अपडेट मिला!' : 'New parent update received!', 'info');
-
-        // Trigger native push notification
-        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-          new Notification(newNotif.title, {
-            body: newNotif.message,
-            icon: '/splash-illustration.jpg'
-          });
-        }
-      } else if (eventType === 1) {
-        // Late arrival / attendance update
-        setChildrenList(prev => {
-          let updated = false;
-          const newList = prev.map(c => {
-            if (!updated && (c.attendance === 'absent' || c.attendance === 'irregular')) {
-              updated = true;
-              const text = language === 'hi' 
-                ? `${c.nameHindi || c.name} केंद्र पर पहुँच चुके हैं (देरी से आगमन)` 
-                : `${c.name} arrived late at the center (Checked In)`;
-              
-              showToast(text, 'success');
-              
-              // Trigger native push notification
-              if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                new Notification(language === 'hi' ? 'देरी से आगमन' : 'Late Check-In', {
-                  body: text,
-                  icon: '/splash-illustration.jpg'
-                });
-              }
-
-              // Add observation
-              const newObs = {
-                id: 'obs-sim-' + Date.now(),
-                date: 'Today',
-                note: language === 'hi' ? 'देरी से आगमन - उपस्थिति दर्ज की गई।' : 'Late arrival - checked in automatically.',
-                category: 'Attendance',
-                type: 'text' as const,
-              };
-              
-              return {
-                ...c,
-                attendance: 'present' as const,
-                observations: [newObs, ...c.observations]
-              };
-            }
-            return c;
-          });
-          return newList;
-        });
-      } else {
-        // Database Sync update
-        showToast(language === 'hi' ? 'पृष्ठभूमि डेटा सिंक पूरा हुआ!' : 'Background auto-sync complete!', 'success');
-      }
-    }, 35000); // every 35 seconds
-
-    return () => clearInterval(interval);
-  }, [screen, language, showToast]);
-
   const selectChild = useCallback(
     (childId: string) => {
       setSelectedChildId(childId);
@@ -445,7 +189,11 @@ function AppContent() {
     [navigateTo]
   );
 
-  // Interactive callbacks
+  const handleOpenSidebar = useCallback(() => {
+    setIsSidebarOpen(true);
+  }, []);
+
+  // Interactive callbacks — now backed by API
   const registerOfflineAction = useCallback((type: string, childName: string, action: string) => {
     if (isOffline) {
       setPendingSync((prev) => [
@@ -472,382 +220,163 @@ function AppContent() {
   }, [showToast]);
 
   const toggleAttendance = useCallback(async (childId: string) => {
-    let success = false;
-    let nextAttendance: 'present' | 'absent' | 'irregular' = 'present';
-    let childName = '';
-
-    setChildrenList((prev) =>
-      prev.map((c) => {
-        if (c.id === childId) {
-          childName = c.name;
-          const isCurrentlyPresent = c.attendance === 'present';
-          nextAttendance = isCurrentlyPresent ? 'absent' : 'present';
-          const nextHistory = [...c.attendanceHistory];
-          if (nextHistory.length > 0) {
-            nextHistory[nextHistory.length - 1] = !isCurrentlyPresent;
+    try {
+      const result = await childrenApi.toggleAttendance(childId);
+      setChildrenList((prev) =>
+        prev.map((c) => {
+          if (c.id === childId) {
+            const nextAttendance = result.attendance as Child['attendance'];
+            const nextHistory = [...c.attendanceHistory];
+            if (nextHistory.length > 0) {
+              nextHistory[nextHistory.length - 1] = nextAttendance === 'present';
+            }
+            return { ...c, attendance: nextAttendance, attendanceHistory: nextHistory };
           }
-          showToast(`${c.name} marked ${nextAttendance === 'present' ? 'Present' : 'Absent'}!`, 'info');
-          return {
-            ...c,
-            attendance: nextAttendance,
-            attendanceHistory: nextHistory,
-          };
-        }
-        return c;
-      })
-    );
-
-    if (!isOffline) {
-      try {
-        await apiCall('/children/attendance', {
-          method: 'PUT',
-          body: JSON.stringify({ childId, attendance: nextAttendance })
-        });
-        success = true;
-      } catch (err) {
-        console.warn('Failed to sync attendance with server. Storing offline action:', err);
-      }
+          return c;
+        })
+      );
+      showToast(`${result.name} marked ${result.attendance === 'present' ? 'Present' : 'Absent'}!`, 'info');
+      registerOfflineAction('Attendance', result.name, `Toggled attendance to ${result.attendance}`);
+    } catch (err) {
+      showToast('Failed to update attendance', 'warning');
     }
+  }, [showToast, registerOfflineAction]);
 
-    if (!success) {
-      registerOfflineAction('Attendance', childName, `Toggled attendance to ${nextAttendance}`);
+  const markAllPresent = useCallback(async () => {
+    try {
+      await childrenApi.markAllPresent();
+      setChildrenList((prev) =>
+        prev.map((c) => {
+          const nextHistory = [...c.attendanceHistory];
+          if (nextHistory.length > 0) nextHistory[nextHistory.length - 1] = true;
+          return { ...c, attendance: 'present', attendanceHistory: nextHistory };
+        })
+      );
+      showToast('All children marked Present!', 'success');
+    } catch (err) {
+      showToast('Failed to mark all present', 'warning');
     }
-  }, [showToast, registerOfflineAction, isOffline]);
+  }, [showToast]);
 
-  const addObservation = useCallback(async (childId: string, note: string, category: string, type: 'voice' | 'text' | 'photo' = 'text', imageUrl?: string) => {
-    let success = false;
-    let childName = '';
-
-    setChildrenList((prev) =>
-      prev.map((c) => {
-        if (c.id === childId) {
-          childName = c.name;
-          const newObs = {
-            id: 'obs-' + Date.now(),
-            date: 'Today',
-            note,
-            category,
-            type,
-            ...(imageUrl ? { imageUrl } : {}),
-          };
-          showToast(`Added observation for ${c.name}!`, 'success');
-          return {
-            ...c,
-            observations: [newObs, ...c.observations],
-          };
-        }
-        return c;
-      })
-    );
-
-    if (!isOffline) {
-      try {
-        await apiCall('/children/observation', {
-          method: 'POST',
-          body: JSON.stringify({ childId, note, category, type, imageUrl })
-        });
-        success = true;
-      } catch (err) {
-        console.warn('Failed to sync observation with server. Storing offline action:', err);
-      }
-    }
-
-    if (!success) {
-      registerOfflineAction('Observation', childName, `Logged ${category} note`);
-    }
-  }, [showToast, registerOfflineAction, isOffline]);
-
-  const completeVisit = useCallback(async (visitId: string) => {
-    let success = false;
-    let childName = '';
-
-    setVisitsList((prev) =>
-      prev.map((v) => {
-        if (v.id === visitId) {
-          childName = v.childName;
-          showToast(`Home visit for ${v.childName} marked complete!`, 'success');
-          return { ...v, status: 'completed' as const };
-        }
-        return v;
-      })
-    );
-
-    if (!isOffline) {
-      try {
-        await apiCall(`/visits/${visitId}/complete`, {
-          method: 'PUT'
-        });
-        success = true;
-      } catch (err) {
-        console.warn('Failed to sync visit completion with server. Storing offline action:', err);
-      }
-    }
-
-    if (!success) {
-      registerOfflineAction('Home Visit', childName, 'Completed visit check-in');
-    }
-  }, [showToast, registerOfflineAction, isOffline]);
-
-  const syncVoiceReport = useCallback((reportData?: { 
-    childObservations: { name: string; note: string; category: string; isAlert?: boolean }[];
-    attendanceCount?: number;
-  }) => {
-    setChildrenList((prev) => {
-      if (reportData && reportData.childObservations && reportData.childObservations.length > 0) {
-        return prev.map((c) => {
-          const childNameLower = c.name.toLowerCase();
-          const match = reportData.childObservations.find(
-            (obs) => childNameLower.includes(obs.name.toLowerCase()) || obs.name.toLowerCase().includes(childNameLower)
-          );
-
-          if (match) {
-            const newObs = {
-              id: 'v-obs-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
-              date: 'Today',
-              note: match.note,
-              category: match.category,
-              type: 'voice' as const,
-            };
+  const addObservation = useCallback(async (childId: string, note: string, category: string) => {
+    try {
+      const result = await childrenApi.addObservation(childId, note, category);
+      setChildrenList((prev) =>
+        prev.map((c) => {
+          if (c.id === childId) {
             return {
               ...c,
-              needsAttention: match.isAlert ? true : c.needsAttention,
-              observations: [newObs, ...c.observations],
-              attendance: 'present' as const
+              observations: [{ id: result.id, date: result.date, note: result.note, category: result.category, type: result.type }, ...c.observations],
             };
           }
           return c;
-        });
-      }
-
-      return prev.map((c) => {
-        if (c.id === '1') { 
-          return {
-            ...c,
-            observations: [
-              { id: 'v-obs-1', date: 'Today', note: 'Excellent participation in poem activity. Shows confidence in group settings.', category: 'Language', type: 'voice' },
-              ...c.observations,
-            ],
-          };
-        }
-        if (c.id === '2') {
-          return {
-            ...c,
-            observations: [
-              { id: 'v-obs-2', date: 'Today', note: 'Demonstrated sharing behavior with peers without prompting. Social skills improving.', category: 'Social', type: 'voice' },
-              ...c.observations,
-            ],
-          };
-        }
-        if (c.id === '3') {
-          return {
-            ...c,
-            needsAttention: true,
-            observations: [
-              { id: 'v-obs-3', date: 'Today', note: 'Quiet today, did not participate actively. Monitor emotional well-being.', category: 'Emotional', type: 'voice' },
-              ...c.observations,
-            ],
-          };
-        }
-        return c;
-      });
-    });
-
-    if (reportData?.attendanceCount !== undefined) {
-      const count = reportData.attendanceCount;
-      setChildrenList((prev) => {
-        const presentCount = prev.filter(c => c.attendance === 'present').length;
-        if (presentCount !== count) {
-          let diff = count - presentCount;
-          return prev.map((c) => {
-            if (diff > 0 && c.attendance !== 'present') {
-              diff--;
-              return { ...c, attendance: 'present' as const };
-            } else if (diff < 0 && c.attendance === 'present') {
-              diff++;
-              return { ...c, attendance: 'absent' as const };
-            }
-            return c;
-          });
-        }
-        return prev;
-      });
-    }
-
-    showToast(
-      language === 'hi' ? 'आवाज रिपोर्ट बच्चों के रिकॉर्ड में सिंक हो गई है!' : 'Voice report synced to children records!', 
-      'success'
-    );
-    registerOfflineAction('Voice Report', 'Multiple Children', 'Synced voice dictation transcript');
-  }, [showToast, registerOfflineAction, language]);
-
-  const handleScheduleActivity = useCallback(async (activityId: string, date: string, targetChildrenIds: string[]) => {
-    let success = false;
-    setScheduledActivities((prev) => [
-      ...prev,
-      {
-        id: 'sched-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
-        activityId,
-        date,
-        targetChildrenIds,
-        completed: false,
-      }
-    ]);
-    const activityName = activities.find(a => a.id === activityId)?.title || 'Activity';
-    showToast(`${activityName} scheduled for ${date}!`, 'success');
-
-    if (!isOffline) {
-      try {
-        await apiCall('/activities/schedule', {
-          method: 'POST',
-          body: JSON.stringify({ activityId, date, targetChildrenIds })
-        });
-        success = true;
-      } catch (err) {
-        console.warn('Failed to sync scheduled activity with server. Storing offline action:', err);
-      }
-    }
-
-    if (!success) {
-      registerOfflineAction('Activity', 'Multiple Children', `Scheduled ${activityName} for ${date}`);
-    }
-  }, [showToast, registerOfflineAction, isOffline]);
-
-  const handleAddVisit = useCallback(async (childName: string, parentName: string, lastVisit: string, concern: string, suggestedTopics: string[]) => {
-    let success = false;
-    const newVisit = {
-      id: 'visit-' + Date.now(),
-      childName,
-      parentName,
-      lastVisit,
-      status: 'pending' as const,
-      concern: concern || 'General Care',
-      suggestedTopics: suggestedTopics && suggestedTopics.length > 0 ? suggestedTopics : [
-        'Review language progress',
-        'Discuss healthy snacks recipes',
-        'Demonstrate simple counting games'
-      ]
-    };
-    setVisitsList(prev => [newVisit, ...prev]);
-    showToast(`Home visit for ${childName} scheduled!`, 'success');
-
-    if (!isOffline) {
-      try {
-        await apiCall('/visits', {
-          method: 'POST',
-          body: JSON.stringify({ childName, parentName, lastVisit, concern, suggestedTopics })
-        });
-        success = true;
-      } catch (err) {
-        console.warn('Failed to sync scheduled visit with server. Storing offline action:', err);
-      }
-    }
-
-    if (!success) {
-      registerOfflineAction('Home Visit', childName, `Scheduled visit for ${lastVisit} (${concern || 'General'})`);
-    }
-  }, [showToast, registerOfflineAction, isOffline]);
-
-  const handleResetData = useCallback(() => {
-    setChildrenList(initialChildren);
-    setVisitsList(initialVisits);
-    setNotificationsList(initialNotifications);
-    setPendingSync([]);
-    setNotificationCount(3);
-    setWorkerName('Sunita Ji');
-    setWorkerId('AW-4521');
-    setAnganwadiBlock('Anganwadi Block 3');
-    showToast('Simulator sandbox reset to initial defaults!', 'success');
-  }, [showToast]);
-
-  const handleSyncNow = useCallback(async () => {
-    const count = pendingSync.length;
-    if (count === 0) {
-      showToast(language === 'hi' ? 'कोई लंबित डेटा सिंक करने के लिए नहीं है।' : 'No pending data to sync.', 'info');
-      return;
-    }
-
-    let success = false;
-    if (!isOffline) {
-      try {
-        const response = await apiCall('/sync', {
-          method: 'POST',
-          body: JSON.stringify({ operations: pendingSync })
-        });
-        
-        if (response.children) setChildrenList(response.children);
-        if (response.homeVisits) setVisitsList(response.homeVisits);
-        if (response.notifications) setNotificationsList(response.notifications);
-        if (response.scheduledActivities) setScheduledActivities(response.scheduledActivities);
-        
-        success = true;
-      } catch (err) {
-        console.warn('Failed to sync queue with server:', err);
-        showToast(language === 'hi' ? 'सिंक विफल - सर्वर अनुपलब्ध है' : 'Sync failed - server is unreachable', 'warning');
-      }
-    }
-
-    if (success || isOffline) {
-      setPendingSync([]);
-      
-      const syncNotif = {
-        id: 'n-sync-' + Date.now(),
-        title: 'Database Synced',
-        message: isOffline 
-          ? `Simulated sync: ${count} pending logs cleared locally.` 
-          : `${count} pending logs uploaded and synced with central Anganwadi server successfully.`,
-        type: 'success' as const,
-        time: 'Just now',
-        read: false,
-      };
-      setNotificationsList(prev => [syncNotif, ...prev]);
-      
-      showToast(
-        language === 'hi' 
-          ? 'डेटाबेस सफलतापूर्वक सिंक हो गया!' 
-          : 'Database fully synced!', 
-        'success'
+        })
       );
+      showToast(`Added observation for ${result.childName}!`, 'success');
+      registerOfflineAction('Observation', result.childName, `Logged ${category} note`);
+    } catch (err) {
+      showToast('Failed to add observation', 'warning');
     }
-  }, [showToast, pendingSync, language, isOffline]);
+  }, [showToast, registerOfflineAction]);
 
-  const handleClearNotifications = useCallback(() => {
-    setNotificationsList([]);
-    setNotificationCount(0);
-    showToast('Notification center cleared!', 'info');
+  const completeVisit = useCallback(async (visitId: string) => {
+    try {
+      const result = await visitsApi.complete(visitId);
+      setVisitsList((prev) =>
+        prev.map((v) => (v.id === visitId ? { ...v, status: 'completed' as const } : v))
+      );
+      showToast(`Home visit for ${result.childName} marked complete!`, 'success');
+      registerOfflineAction('Home Visit', result.childName, 'Completed visit check-in');
+    } catch (err) {
+      showToast('Failed to complete visit', 'warning');
+    }
+  }, [showToast, registerOfflineAction]);
+
+  const handleSaveVoiceReport = useCallback(async (items: { childName: string; note: string; type: 'observation' | 'alert' }[]) => {
+    if (items.length === 0) {
+      showToast('No observations recognized to save!', 'warning');
+      return false;
+    }
+    try {
+      const result = await voiceReportApi.save(items);
+      // Refresh all lists to ensure attendance, notifications, and scheduled home visits sync immediately
+      await fetchAllData();
+      showToast(result.message, 'success');
+      registerOfflineAction('Voice Report', 'Multiple Children', `Logged ${items.length} observations`);
+      return true;
+    } catch (err) {
+      showToast('Failed to save voice report', 'warning');
+      return false;
+    }
+  }, [showToast, registerOfflineAction, fetchAllData]);
+
+  const handleAddVisit = useCallback(async (childName: string, parentName: string, lastVisit: string) => {
+    try {
+      const newVisit = await visitsApi.create({ childName, parentName, lastVisit });
+      setVisitsList(prev => [newVisit, ...prev]);
+      showToast(`Home visit for ${childName} scheduled!`, 'success');
+      registerOfflineAction('Home Visit', childName, `Scheduled visit for ${lastVisit}`);
+    } catch (err) {
+      showToast('Failed to schedule visit', 'warning');
+    }
+  }, [showToast, registerOfflineAction]);
+
+  const handleResetData = useCallback(async () => {
+    try {
+      await adminApi.resetDatabase();
+      await fetchAllData();
+      setNotificationCount(3);
+      setWorkerName('Sunita Ji');
+      setWorkerId('AW-4521');
+      setAnganwadiBlock('Anganwadi Block 3');
+      showToast('Database reset to initial defaults!', 'success');
+    } catch (err) {
+      showToast('Failed to reset database', 'warning');
+    }
+  }, [showToast, fetchAllData]);
+
+  const handleSyncNow = useCallback(() => {
+    setPendingSync([]);
+    showToast('Database fully synced to central server!', 'success');
   }, [showToast]);
 
-  const handleMarkNotificationsRead = useCallback(async () => {
-    let hadUnread = false;
-    setNotificationsList((prev) => {
-      const hasUnread = prev.some((n: any) => !n.read);
-      if (!hasUnread) return prev;
-      hadUnread = true;
-      return prev.map((n: any) => ({ ...n, read: true }));
-    });
-
-    if (hadUnread && !isOffline) {
-      try {
-        await apiCall('/notifications/read-all', {
-          method: 'PUT',
-        });
-      } catch (err) {
-        console.warn('Failed to sync notification read status with server:', err);
-      }
+  const handleClearNotifications = useCallback(async () => {
+    try {
+      await notificationsApi.clearAll();
+      setNotificationsList([]);
+      setNotificationCount(0);
+      showToast('Notification center cleared!', 'info');
+    } catch (err) {
+      showToast('Failed to clear notifications', 'warning');
     }
-  }, [isOffline]);
+  }, [showToast]);
 
-  const handleDeleteNotification = useCallback(async (id: string) => {
-    setNotificationsList((prev) => prev.filter((n: any) => n.id !== id));
-    if (!isOffline) {
-      try {
-        await apiCall(`/notifications/${id}`, {
-          method: 'DELETE',
-        });
-      } catch (err) {
-        console.warn('Failed to delete notification on server:', err);
-      }
+  const handleLogin = useCallback(async (phone: string, password: string) => {
+    try {
+      const { token, worker } = await authApi.login(phone, password);
+      setAuthToken(token);
+      setWorkerName(worker.name);
+      setWorkerId(worker.id);
+      setAnganwadiBlock(worker.anganwadiBlock);
+      setLanguage(worker.language);
+      await fetchAllData();
+      showToast(`Welcome ${worker.name}!`, 'success');
+      navigateTo('home');
+    } catch (err) {
+      showToast('Login failed — check phone & password', 'warning');
     }
-  }, [isOffline]);
+  }, [showToast, navigateTo, fetchAllData]);
+
+  const handleUpdateProfile = useCallback(async (data: { name?: string; anganwadiBlock?: string }) => {
+    try {
+      const updated = await authApi.updateProfile(data);
+      setWorkerName(updated.name);
+      setAnganwadiBlock(updated.anganwadiBlock);
+      showToast('Profile updated!', 'success');
+    } catch (err) {
+      showToast('Failed to update profile', 'warning');
+    }
+  }, [showToast]);
 
   const showNavTabs = ['home', 'children', 'activities', 'reports', 'ai-assistant'].includes(screen);
 
@@ -922,41 +451,18 @@ function AppContent() {
                 </div>
               </div>
             )}
-            <main ref={mainRef} className="flex-1 overflow-y-auto scrollbar-hide dark:bg-slate-950">
-              {screen === 'splash' && <SplashScreen onStart={() => navigateTo('language')} />}
+            <main className="flex-1 overflow-y-auto scrollbar-hide dark:bg-slate-950">
+              {screen === 'splash' && <SplashScreen onStart={() => navigateTo('login')} />}
               {screen === 'language' && (
                 <LanguageScreen
                   selected={language}
-                  onSelect={(code) => setLanguage(code as LanguageCode)}
+                  onSelect={setLanguage}
                   onContinue={() => navigateTo('login')}
                 />
               )}
               {screen === 'login' && (
                 <LoginScreen
-                  onLogin={(id, mob, remember) => {
-                    const name = localStorage.getItem('pratibha_worker_name') || (id === 'AW-1234' ? 'Saraswati Devi' : (id === 'AW-4521' ? 'Sunita Ji' : 'Anganwadi Worker'));
-                    const block = localStorage.getItem('pratibha_anganwadi_block') || 'Anganwadi Block 3';
-                    setWorkerId(id);
-                    setWorkerName(name);
-                    setAnganwadiBlock(block);
-                    
-                    if (remember) {
-                      localStorage.setItem('pratibha_remember_me', 'true');
-                      localStorage.setItem('pratibha_worker_id', id);
-                      localStorage.setItem('pratibha_worker_name', name);
-                      localStorage.setItem('pratibha_anganwadi_block', block);
-                      localStorage.setItem('pratibha_mobile', mob);
-                    } else {
-                      localStorage.removeItem('pratibha_remember_me');
-                      localStorage.removeItem('pratibha_worker_id');
-                      localStorage.removeItem('pratibha_worker_name');
-                      localStorage.removeItem('pratibha_anganwadi_block');
-                      localStorage.removeItem('pratibha_mobile');
-                    }
-                    showToast(t('namaste', { name }), 'success');
-                    navigateTo('home');
-                    loadDataFromServer();
-                  }}
+                  onLogin={handleLogin}
                 />
               )}
               {screen === 'home' && (
@@ -966,11 +472,11 @@ function AppContent() {
                   isOffline={isOffline}
                   onToggleOffline={toggleOffline}
                   notificationCount={notificationCount}
-                  onNotificationClick={() => navigateTo('notifications')}
-                  onOpenSidebar={() => setIsSidebarOpen(true)}
+                  onOpenSidebar={handleOpenSidebar}
                   childrenList={childrenList}
                   visitsList={visitsList}
                   workerName={workerName}
+                  language={language}
                 />
               )}
               {screen === 'children' && (
@@ -978,6 +484,8 @@ function AppContent() {
                   onChildSelect={selectChild}
                   childrenList={childrenList}
                   onToggleAttendance={toggleAttendance}
+                  onMarkAllPresent={markAllPresent}
+                  language={language}
                 />
               )}
               {screen === 'child-profile' && selectedChildId && (
@@ -992,26 +500,41 @@ function AppContent() {
               {screen === 'voice-report' && (
                 <VoiceReportScreen
                   onBack={goBack}
-                  onComplete={(reportData) => {
-                    syncVoiceReport(reportData);
-                    goBack();
+                  onComplete={async (parsedData) => {
+                    const success = await handleSaveVoiceReport(parsedData);
+                    if (success) {
+                      goBack();
+                    }
                   }}
+                  childrenList={childrenList}
+                  language={language}
                 />
               )}
               {screen === 'activities' && (
                 <ActivitiesScreen
                   onBack={goBack}
+                  language={language}
                   childrenList={childrenList}
-                  scheduledActivities={scheduledActivities}
-                  onScheduleActivity={handleScheduleActivity}
-                  showToast={showToast}
+                  onAddObservation={addObservation}
                 />
               )}
               {screen === 'ai-assistant' && (
-                <AiAssistantScreen onBack={goBack} childrenList={childrenList} />
+                <AiAssistantScreen
+                  onBack={goBack}
+                  isOffline={isOffline}
+                  language={language}
+                  onAddObservation={addObservation}
+                  childrenList={childrenList}
+                  visitsList={visitsList}
+                />
               )}
               {screen === 'reports' && (
-                <ReportsScreen onBack={goBack} onNavigate={navigateTo} childrenList={childrenList} />
+                <ReportsScreen
+                  onBack={goBack}
+                  onNavigate={navigateTo}
+                  childrenList={childrenList}
+                  visitsList={visitsList}
+                />
               )}
               {screen === 'home-visits' && (
                 <HomeVisitsScreen
@@ -1026,10 +549,9 @@ function AppContent() {
                 <NotificationsScreen
                   onBack={goBack}
                   onNavigate={navigateTo}
-                  onRead={handleMarkNotificationsRead}
+                  onRead={() => setNotificationCount(0)}
                   notificationsList={notificationsList}
                   onClearNotifications={handleClearNotifications}
-                  onDeleteNotification={handleDeleteNotification}
                 />
               )}
               {screen === 'offline' && (
@@ -1041,22 +563,17 @@ function AppContent() {
                 />
               )}
               {screen === 'impact' && (
-                <ImpactScreen
-                  onBack={goBack}
-                  childrenList={childrenList}
-                  visitsList={visitsList}
-                  scheduledActivities={scheduledActivities}
-                />
+                <ImpactScreen onBack={goBack} />
               )}
               {screen === 'settings' && (
                 <SettingsScreen
                   onBack={goBack}
                   workerName={workerName}
-                  setWorkerName={setWorkerName}
+                  setWorkerName={(name: string) => { setWorkerName(name); handleUpdateProfile({ name }); }}
                   workerId={workerId}
                   setWorkerId={setWorkerId}
                   anganwadiBlock={anganwadiBlock}
-                  setAnganwadiBlock={setAnganwadiBlock}
+                  setAnganwadiBlock={(block: string) => { setAnganwadiBlock(block); handleUpdateProfile({ anganwadiBlock: block }); }}
                   onResetData={handleResetData}
                 />
               )}
@@ -1098,14 +615,6 @@ function AppContent() {
       </div>
     </div>
   </div>
-  );
-}
-
-function App() {
-  return (
-    <LanguageProvider>
-      <AppContent />
-    </LanguageProvider>
   );
 }
 

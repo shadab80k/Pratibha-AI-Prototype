@@ -8,22 +8,17 @@ interface LanguageScreenProps {
 }
 
 export function LanguageScreen({ selected, onSelect, onContinue }: LanguageScreenProps) {
-  // Only allow English and Hindi
-  const filteredLanguages = languageOptions.filter(
-    (lang) => lang.code === 'en' || lang.code === 'hi'
-  );
-
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-orange-50 to-white dark:from-slate-900 dark:to-slate-950 px-6 py-8 transition-colors duration-300">
       {/* Header */}
       <div className="mt-8 mb-8">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Choose Your Language</h1>
-        <p className="text-gray-505 dark:text-slate-400 mt-1">अपनी भाषा चुनें / Choose Your Language</p>
+        <p className="text-gray-500 dark:text-slate-400 mt-1">अपनी भाषा चुनें / তোমার ভাষা চয়ন কর</p>
       </div>
 
       {/* Language Cards */}
       <div className="flex-1 space-y-3">
-        {filteredLanguages.map((lang) => {
+        {languageOptions.map((lang) => {
           const isSelected = selected === lang.code;
           return (
             <button
@@ -32,7 +27,7 @@ export function LanguageScreen({ selected, onSelect, onContinue }: LanguageScree
               className={`w-full flex items-center gap-4 p-5 rounded-2xl border-2 transition-all duration-200 active:scale-[0.98] select-none text-left ${
                 isSelected
                   ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/20 shadow-md shadow-orange-100 dark:shadow-none'
-                  : 'border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-gray-300 dark:hover:border-slate-750'
+                  : 'border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-gray-300 dark:hover:border-slate-700'
               }`}
             >
               <div
@@ -48,7 +43,7 @@ export function LanguageScreen({ selected, onSelect, onContinue }: LanguageScree
                 <p className={`text-lg font-semibold ${isSelected ? 'text-orange-700 dark:text-orange-400' : 'text-gray-800 dark:text-slate-200'}`}>
                   {lang.label}
                 </p>
-                <p className="text-sm text-gray-450 dark:text-slate-450">{lang.labelEn}</p>
+                <p className="text-sm text-gray-400 dark:text-slate-400">{lang.labelEn}</p>
               </div>
               {isSelected && (
                 <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center shrink-0">

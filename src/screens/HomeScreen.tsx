@@ -1,3 +1,4 @@
+import React, { useMemo } from 'react';
 import {
   Mic,
   Users,
@@ -12,12 +13,11 @@ import {
   TrendingUp,
   Clock,
   Heart,
-  Music,
-  Palette,
-  Activity,
+  AlertTriangle,
+  Calendar,
 } from 'lucide-react';
 import type { Screen } from '../App';
-import { useLanguage } from '../context/LanguageContext';
+import type { Child, HomeVisit } from '../lib/api';
 
 interface HomeScreenProps {
   onNavigate: (screen: Screen) => void;
@@ -25,155 +25,180 @@ interface HomeScreenProps {
   isOffline: boolean;
   onToggleOffline: () => void;
   notificationCount: number;
-  onNotificationClick: () => void;
   onOpenSidebar: () => void;
-  childrenList: any[];
-  visitsList: any[];
+  childrenList: Child[];
+  visitsList: HomeVisit[];
   workerName: string;
+  language: string;
 }
 
 const quickActions = [
-  { label: 'Record\nAttendance', labelHi: 'उपस्थिति', icon: CalendarCheck, color: 'bg-emerald-500', screen: 'children' as Screen },
-  { label: 'Start\nActivity', labelHi: 'गतिविधि', icon: Sparkles, color: 'bg-violet-500', screen: 'activities' as Screen },
-  { label: 'Voice\nReport', labelHi: 'आवाज़ रिपोर्ट', icon: Mic, color: 'bg-orange-500', screen: 'voice-report' as Screen },
-  { label: 'Add\nObservation', labelHi: 'टिप्पणी', icon: PlusCircle, color: 'bg-sky-500', screen: 'children' as Screen },
+  { label: 'Record\nAttendance', labelHi: 'उपस्थिति\nदर्ज करें', icon: CalendarCheck, color: 'bg-emerald-500', screen: 'children' as Screen },
+  { label: 'Start\nActivity', labelHi: 'गतिविधि\nशुरू करें', icon: Sparkles, color: 'bg-violet-500', screen: 'activities' as Screen },
+  { label: 'Voice\nReport', labelHi: 'आवाज़\nरिपोर्ट', icon: Mic, color: 'bg-orange-500', screen: 'voice-report' as Screen },
+  { label: 'Home\nVisits', labelHi: 'गृह\nदौरा', icon: Calendar, color: 'bg-pink-500', screen: 'home-visits' as Screen },
+  { label: 'AI\nAssistant', labelHi: 'एआई\nसहायक', icon: Sparkles, color: 'bg-indigo-500', screen: 'ai-assistant' as Screen },
+  { label: 'Add\nObservation', labelHi: 'टिप्पणी\nजोड़ें', icon: PlusCircle, color: 'bg-sky-500', screen: 'children' as Screen },
 ];
 
-const actionKeys: Record<string, any> = {
-  'Record\nAttendance': 'recordAttendance',
-  'Start\nActivity': 'startActivity',
-  'Voice\nReport': 'voiceReport',
-  'Add\nObservation': 'addObservation'
-};
-
-const alerts = [
-  { icon: Users, text: '3 children absent for 5+ days', color: 'text-red-500', bg: 'bg-red-50' },
-  { icon: FileText, text: 'Nutrition update pending', color: 'text-amber-500', bg: 'bg-amber-50' },
-];
-
-const alertKeys: Record<string, any> = {
-  '3 children absent for 5+ days': 'absenteesAlert',
-  'Nutrition update pending': 'nutritionAlert'
-};
-
-export function HomeScreen({
+export const HomeScreen = React.memo(function HomeScreen({
   onNavigate,
-  onChildSelect: _onChildSelect,
+  onChildSelect,
   isOffline,
   onToggleOffline,
   notificationCount,
-  onNotificationClick,
   onOpenSidebar,
   childrenList,
   visitsList,
   workerName,
+  language,
 }: HomeScreenProps) {
-  const { t, language } = useLanguage();
-  const presentCount = childrenList.filter((c) => c.attendance === 'present').length;
-  const totalCount = childrenList.length;
-  const goodNutritionCount = childrenList.filter((c) => c.nutritionStatus === 'good').length;
-  const attendanceRate = totalCount > 0 ? Math.round((presentCount / totalCount) * 1000) / 10 : 0;
-  
-  // Calculate pending visits dynamically from visitsList state
-  const pendingVisitsCount = visitsList.filter((v) => v.status === 'pending').length;
+  // Memoize counts and child-related stats
+  const {
+    presentCount,
+    totalCount,
+    attendanceRate,
+    goodNutritionCount,
+    nutritionPercentage,
+    needsAttentionChildren
+  } = useMemo(() => {
+    const list = childrenList || [];
+    const total = list.length;
+    const present = list.filter((c) => c.attendance === 'present').length;
+    const rate = total > 0 ? Math.round((present / total) * 1000) / 10 : 0;
+    const goodNutrition = list.filter((c) => c.nutritionStatus === 'good').length;
+    const nutritionPct = total > 0 ? Math.round((goodNutrition / total) * 100) : 0;
+    const attention = list.filter((c) => c.needsAttention);
+    return {
+      presentCount: present,
+      totalCount: total,
+      attendanceRate: rate,
+      goodNutritionCount: goodNutrition,
+      nutritionPercentage: nutritionPct,
+      needsAttentionChildren: attention,
+    };
+  }, [childrenList]);
 
-  // Dynamic AI recommended activity based on child state lags
-  const childrenNeedingSupport = childrenList.filter(
-    (c) => c.needsAttention || c.attendance === 'irregular' || c.nutritionStatus !== 'good'
-  );
-  const supportChild = childrenNeedingSupport.length > 0 ? childrenNeedingSupport[0] : childrenList[0];
-  
-  let recTitle = '';
-  let recDesc = '';
-  let recIcon = 'BookOpen';
+  // Memoize pending visits count
+  const pendingVisitsCount = useMemo(() => {
+    return (visitsList || []).filter((v) => v.status === 'pending').length;
+  }, [visitsList]);
 
-  if (supportChild) {
-    const isHindi = language === 'hi';
-    const isBengali = language === 'bn';
-    const isMarathi = language === 'mr';
-    const childName = isHindi && supportChild.nameHindi ? supportChild.nameHindi : supportChild.name;
-    
-    if (supportChild.attendance === 'irregular') {
-      recTitle = isHindi ? 'सिमन कहता है गतिविधि' : isBengali ? 'সিমন বলে কার্যক্রম' : isMarathi ? 'सिमन म्हणतो कृती' : 'Simon Says Activity';
-      recDesc = isHindi 
-        ? `${childName} की हजेरी में सुधार के लिए सामूहिक गतिविधि 'सिमन कहता है' कराएं।`
-        : isBengali 
-        ? `${childName}-এর উপস্থিতি উন্নত করতে মজার গ্রুপ গেম 'সিমন বলে' খেলান।`
-        : isMarathi
-        ? `${childName} च्या उपस्थिती सुधारण्यासाठी 'सिमन म्हणतो' ही खेळकर कृती करा।`
-        : `Boost ${childName}'s attendance and energy today with a fun group activity: 'Simon Says'.`;
-      recIcon = 'Activity';
-    } else if (supportChild.nutritionStatus === 'at-risk' || supportChild.nutritionStatus === 'monitoring') {
-      recTitle = isHindi ? 'रंग वर्गीकरण खेल' : isBengali ? 'রঙের শ্রেণীবিন্যাস খেলা' : isMarathi ? 'रंग वर्गीकरण खेळ' : 'Color Sorting Game';
-      recDesc = isHindi
-        ? `${childName} के संज्ञानात्मक विकास और ध्यान सुधार के लिए आज 'रंग वर्गीकरण खेल' की सिफारिश की जाती है।`
-        : isBengali
-        ? `${childName}-এর পুষ্টি ও মনোযোগের উন্নয়নের জন্য রঙের শ্রেণীবিন্যাস খেলা আজ প্রস্তাবিত।`
-        : isMarathi
-        ? `${childName} च्या पोषण आणि लक्ष केंद्रीत करण्यासाठी रंग वर्गीकरण खेळाची शिफारस केली जाते।`
-        : `For ${childName}'s cognitive and fine-motor development, a 'Color Sorting Game' is recommended today.`;
-      recIcon = 'Palette';
-    } else {
-      recTitle = isHindi ? 'कहानी वृत्त गतिविधि' : isBengali ? 'গল্পের বৃত্ত কার্যক্রম' : isMarathi ? 'गोष्ट वर्तुळ कृती' : 'Story Circle Activity';
-      recDesc = isHindi
-        ? `हाल के अवलोकनों के अनुसार, ${childName} को आज भाषा-केंद्रित 'कहानी वृत्त' गतिविधि से लाभ होगा।`
-        : isBengali
-        ? `সাম্প্রতিক পর্যবেক্ষণের উপর ভিত্তি করে, ${childName} আজ ভাষা-ভিত্তিক 'গল্পের বৃত্ত' থেকে উপকৃত হবে।`
-        : isMarathi
-        ? `अलीकडील निरीक्षणांच्या आधारे, ${childName} ला भाषा-केंद्रित गोष्ट वाचनाचा फायदा होईल।`
-        : `Based on recent observations, ${childName} would benefit from a language-focused Story Circle today.`;
-      recIcon = 'BookOpen';
-    }
-  } else {
-    recTitle = t('storyCircle');
-    recDesc = t('storyCircleDesc');
-    recIcon = 'BookOpen';
-  }
+  // Memoize today's date formatted beautifully in Hindi or English
+  const formattedDate = useMemo(() => {
+    const today = new Date();
+    const options: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'short' };
+    const locale = language === 'hi' ? 'hi-IN' : 'en-US';
+    return today.toLocaleDateString(locale, options);
+  }, [language]);
 
-  // Dynamic daily insight generated from latest child observations
-  let latestObs: any = null;
-  let newestObsId = 0;
-  childrenList.forEach((c) => {
-    if (c.observations && Array.isArray(c.observations)) {
-      c.observations.forEach((o: any) => {
-        if (o.id.startsWith('obs-') || o.id.startsWith('v-obs-')) {
-          const timestamp = parseInt(o.id.split('-').pop() || '0');
-          if (timestamp > newestObsId) {
-            newestObsId = timestamp;
-            latestObs = { childName: c.nameHindi && language === 'hi' ? c.nameHindi : c.name, note: o.note, category: o.category };
-          }
-        }
+  // Memoize dynamic alerts (Reminders) to replace static notifications
+  const dynamicAlerts = useMemo(() => {
+    const list = [];
+    const listChildren = childrenList || [];
+    const absentCount = listChildren.filter(c => c.attendance === 'absent').length;
+    const irregularCount = listChildren.filter(c => c.attendance === 'irregular').length;
+    const totalAbsentOrIrregular = absentCount + irregularCount;
+
+    if (totalAbsentOrIrregular > 0) {
+      list.push({
+        id: 'alert-attendance',
+        icon: Users,
+        text: language === 'hi' 
+          ? `${totalAbsentOrIrregular} बच्चे आज अनुपस्थित/अनियमित हैं` 
+          : `${totalAbsentOrIrregular} ${totalAbsentOrIrregular === 1 ? 'child is' : 'children are'} absent/irregular today`,
+        color: 'text-red-500',
+        bg: 'bg-red-50 dark:bg-red-950/20',
+        screen: 'children' as Screen,
       });
     }
-  });
 
-  let dailyInsight = '';
-  const isHindi = language === 'hi';
-  const isBengali = language === 'bn';
-  const isMarathi = language === 'mr';
+    // Nutrition update pending alert: count children with nutritionStatus !== 'good'
+    const riskCount = listChildren.filter(c => c.nutritionStatus !== 'good').length;
+    if (riskCount > 0) {
+      list.push({
+        id: 'alert-nutrition',
+        icon: FileText,
+        text: language === 'hi'
+          ? `${riskCount} बच्चों का पोषण अपडेट लंबित है`
+          : `Nutrition update pending for ${riskCount} ${riskCount === 1 ? 'child' : 'children'}`,
+        color: 'text-amber-500',
+        bg: 'bg-amber-50 dark:bg-amber-950/20',
+        screen: 'reports' as Screen,
+      });
+    }
 
-  if (latestObs) {
-    dailyInsight = isHindi
-      ? `आज का सुझाव: ${latestObs.childName} के संबंध में आज दर्ज की गई टिप्पणी "${latestObs.note}" के आधार पर काम बढ़ाएं।`
-      : isBengali
-      ? `আজকের পরামর্শ: ${latestObs.childName}-এর জন্য আজ নথিভুক্ত করা মন্তব্য "${latestObs.note}"-এর ভিত্তিতে কাজ চালিয়ে যান।`
-      : isMarathi
-      ? `आजचा सल्ला: ${latestObs.childName} साठी आज नोंदवलेली नोंद "${latestObs.note}" च्या आधारे काम पुढे वाढवा।`
-      : `AI Insight: Based on today's logged note for ${latestObs.childName} (${latestObs.category}), continue encouraging their progress.`;
-  } else {
-    dailyInsight = isHindi
-      ? `आज की अंतर्दृष्टि: आपकी उपस्थिति दर ${attendanceRate}% है। ${presentCount} बच्चे उपस्थित हैं। पोषण ट्रैकिंग अपडेट रखें!`
-      : isBengali
-      ? `আজকের অন্তর্দৃষ্টি: আপনার উপস্থিতি হার ${attendanceRate}%। ${presentCount} জন শিশু উপস্থিত আছে। পুষ্টি ট্র্যাকিং আপডেট রাখুন!`
-      : isMarathi
-      ? `आजची अंतर्दृष्टी: तुमचा हजेरी दर ${attendanceRate}% आहे। ${presentCount} मुले हजर आहेत। पोषण ट्रॅकिंग अपडेट ठेवा!`
-      : t('raniInsight');
-  }
+    return list;
+  }, [childrenList, language]);
 
-  // Dynamic Time Saved Calculation
-  const observationsCount = childrenList.reduce((acc, c) => acc + (c.observations ? c.observations.length : 0), 0);
-  const timeSaved = 60 + (observationsCount * 2) + (presentCount * 1.5) - (pendingVisitsCount * 2.5);
-  const displayTimeSaved = Math.max(30, Math.round(timeSaved));
+  // Memoize daily insight
+  const dailyInsight = useMemo(() => {
+    const list = childrenList || [];
+    const rani = list.find(c => c.name === 'Rani' || c.nameHindi === 'रानी');
+    if (rani) {
+      const name = language === 'hi' ? rani.nameHindi : rani.name;
+      if (language === 'hi') {
+        return `“इस सप्ताह गतिविधियों में ${name} की भागीदारी में 40% सुधार हुआ है। समूह में कहानी सुनाने को बढ़ावा देते रहें!”`;
+      } else {
+        return `“${name}'s participation in language activities has improved by 40% this week. Keep encouraging group storytelling!”`;
+      }
+    }
+    if (list.length > 0) {
+      const firstChild = list[0];
+      const name = language === 'hi' ? firstChild.nameHindi : firstChild.name;
+      if (language === 'hi') {
+        return `“${name} खेल-खेल में सीख रहा है। दैनिक गतिविधियों को प्रोत्साहित करें!”`;
+      } else {
+        return `“${name} is learning through play. Encourage daily activities!”`;
+      }
+    }
+    return language === 'hi'
+      ? "“आज की अंतर्दृष्टि: कोई बच्चा पंजीकृत नहीं है। कृपया बच्चों को जोड़ें।”"
+      : "“Today's Insight: No children registered. Please register children to get insights.”";
+  }, [childrenList, language]);
+
+  // Memoize time saved card data
+  const timeSaved = useMemo(() => {
+    const list = childrenList || [];
+    const totalObservations = list.reduce((acc, child) => acc + (child.observations?.length || 0), 0);
+    const completedVisits = (visitsList || []).filter(v => v.status === 'completed').length;
+    return 30 + (totalObservations * 5) + (completedVisits * 10);
+  }, [childrenList, visitsList]);
+
+  // Memoize AI Activity suggestion
+  const aiActivitySuggestion = useMemo(() => {
+    const list = childrenList || [];
+    const supportNeededChildren = list.filter(c => c.needsAttention || c.developmentProgress < 75);
+    const count = supportNeededChildren.length;
+    
+    const activityTitle = language === 'hi' ? 'कहानी वृत्त गतिविधि' : 'Story Circle Activity';
+    let description = '';
+    
+    if (count > 0) {
+      const primaryChild = language === 'hi' ? supportNeededChildren[0].nameHindi : supportNeededChildren[0].name;
+      const othersCount = count - 1;
+      if (language === 'hi') {
+        description = othersCount > 0 
+          ? `हाल के अवलोकनों के आधार पर, ${primaryChild} और ${othersCount} अन्य बच्चों को भाषा-केंद्रित समूह पाठन से लाभ होगा।`
+          : `हाल के अवलोकनों के आधार पर, ${primaryChild} को भाषा-केंद्रित समूह पाठन से लाभ होगा।`;
+      } else {
+        description = othersCount > 0 
+          ? `Based on recent observations, ${primaryChild} and ${othersCount} other${othersCount === 1 ? '' : 's'} would benefit from language-focused group reading.`
+          : `Based on recent observations, ${primaryChild} would benefit from language-focused group reading.`;
+      }
+    } else {
+      if (language === 'hi') {
+        description = `सभी बच्चे अच्छी प्रगति कर रहे हैं! समूह गतिविधियों के माध्यम से उनकी सामाजिक क्षमताओं को बढ़ावा दें।`;
+      } else {
+        description = `All children are making great progress! Continue with group storytelling to boost social skills.`;
+      }
+    }
+    
+    return {
+      title: activityTitle,
+      description
+    };
+  }, [childrenList, language]);
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] dark:bg-slate-950">
@@ -182,23 +207,29 @@ export function HomeScreen({
         <div className="flex items-center justify-between">
           <button
             onClick={onOpenSidebar}
-            className="flex items-center gap-3 text-left active:scale-95 transition-transform outline-none"
+            className="flex items-center gap-3 text-left active:scale-95 transition-transform outline-none focus-visible:ring-2 focus-visible:ring-orange-500 rounded-xl"
+            aria-label="Open sidebar menu"
           >
             <img
-              src="/worker-sunita.png"
+              src="./worker-sunita.png"
               alt="Sunita"
               className="w-10 h-10 rounded-full object-cover border-2 border-orange-200"
             />
             <div>
-              <p className="text-xs text-gray-400">{t('welcome')}</p>
-              <h2 className="text-sm font-semibold text-gray-800 dark:text-white">{t('namaste', { name: workerName })}</h2>
+              <p className="text-xs text-gray-400 dark:text-slate-400 font-medium">
+                {language === 'hi' ? 'स्वागत है' : 'Welcome'} • {formattedDate}
+              </p>
+              <h2 className="text-sm font-semibold text-gray-800 dark:text-white">
+                {language === 'hi' ? `नमस्ते ${workerName}` : `Namaste ${workerName}`}
+              </h2>
             </div>
           </button>
           <div className="flex items-center gap-2">
             <button
               onClick={onToggleOffline}
-              className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
+              className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors focus-visible:ring-2 focus-visible:ring-orange-500 outline-none"
               title="Toggle offline mode"
+              aria-label="Toggle offline mode"
             >
               {isOffline ? (
                 <CloudOff size={20} className="text-gray-400" />
@@ -207,12 +238,14 @@ export function HomeScreen({
               )}
             </button>
             <button
-              onClick={onNotificationClick}
-              className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors relative"
+              onClick={() => onNavigate('notifications')}
+              className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors relative focus-visible:ring-2 focus-visible:ring-orange-500 outline-none"
+              title={language === 'hi' ? 'सूचनाएं' : 'Notifications'}
+              aria-label={language === 'hi' ? 'सूचनाएं खोलें' : 'Open Notifications'}
             >
-              <Bell size={20} className="text-gray-650 dark:text-slate-350" />
+              <Bell size={20} className="text-gray-600 dark:text-slate-300" />
               {notificationCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
                   {notificationCount}
                 </span>
               )}
@@ -226,62 +259,129 @@ export function HomeScreen({
         {isOffline && (
           <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 dark:bg-slate-900 rounded-xl border border-transparent dark:border-slate-800">
             <CloudOff size={16} className="text-gray-500 dark:text-slate-400" />
-            <p className="text-xs text-gray-500 dark:text-slate-400 flex-1 font-medium">{t('offlineMode')}</p>
-            <span className="text-[9px] bg-amber-500/20 dark:bg-amber-500/10 px-2 py-0.5 rounded-full text-amber-700 dark:text-amber-450 font-bold">Auto-sync</span>
+            <p className="text-xs text-gray-500 dark:text-slate-400 flex-1 font-medium">
+              {language === 'hi' 
+                ? 'ऑफलाइन मोड - सैंडबॉक्स लोकल सिंक सक्रिय' 
+                : 'Offline mode - Sandbox local sync active'
+              }
+            </p>
+            <span className="text-xs bg-amber-500/20 dark:bg-amber-500/10 px-2 py-0.5 rounded-full text-amber-700 dark:text-amber-400 font-bold">
+              {language === 'hi' ? 'ऑटो-सिंक' : 'Auto-sync'}
+            </span>
           </div>
         )}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-2 gap-3">
+          {/* Attendance Stat Card */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-slate-800">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-950/30 rounded-lg flex items-center justify-center">
                 <Users size={16} className="text-emerald-600 dark:text-emerald-400" />
               </div>
-              <span className="text-xs text-gray-400 font-medium">{t('attendanceCard')}</span>
+              <span className="text-xs text-gray-400 font-medium">
+                {language === 'hi' ? 'उपस्थिति' : 'Attendance'}
+              </span>
             </div>
             <p className="text-2xl font-bold text-gray-800 dark:text-white">
               {presentCount}
-              <span className="text-sm font-normal text-gray-400">/{totalCount}</span>
+              {totalCount > 0 && <span className="text-sm font-normal text-gray-400">/{totalCount}</span>}
             </p>
-            <p className="text-xs text-emerald-600 dark:text-emerald-450 mt-1 font-medium">
-              {t('presentToday', { present: presentCount, total: totalCount })}
+            <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
+              {totalCount > 0 
+                ? (language === 'hi' ? `${attendanceRate}% उपस्थित आज` : `${attendanceRate}% present today`)
+                : (language === 'hi' ? 'कोई बच्चा नहीं' : 'No children')
+              }
             </p>
           </div>
+
+          {/* Nutrition Stat Card */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-slate-800">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-8 h-8 bg-amber-100 dark:bg-amber-950/30 rounded-lg flex items-center justify-center">
-                <Heart size={16} className="text-amber-600 dark:text-amber-405" />
+                <Heart size={16} className="text-amber-600 dark:text-amber-400" />
               </div>
-              <span className="text-xs text-gray-400 font-medium">{t('nutritionCard')}</span>
+              <span className="text-xs text-gray-400 font-medium">
+                {language === 'hi' ? 'पोषण स्तर' : 'Nutrition'}
+              </span>
             </div>
             <p className="text-2xl font-bold text-gray-800 dark:text-white">
               {goodNutritionCount}
-              <span className="text-sm font-normal text-gray-400">/{totalCount}</span>
+              {totalCount > 0 && <span className="text-sm font-normal text-gray-400">/{totalCount}</span>}
             </p>
-            <p className="text-xs text-emerald-600 dark:text-emerald-450 mt-1 font-medium">
-              {t('goodStatus', { good: goodNutritionCount, total: totalCount })}
+            <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
+              {totalCount > 0 
+                ? (language === 'hi' ? `${nutritionPercentage}% अच्छी स्थिति` : `${nutritionPercentage}% in good health`)
+                : (language === 'hi' ? 'कोई बच्चा नहीं' : 'No children')
+              }
             </p>
           </div>
         </div>
 
+        {/* Needs Attention Highlight */}
+        {totalCount > 0 && needsAttentionChildren.length > 0 && (
+          <div className="bg-red-50 dark:bg-red-950/20 rounded-2xl p-4 border border-red-100 dark:border-red-900/20">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                <AlertTriangle size={16} className="animate-bounce" />
+                <span className="text-xs font-bold uppercase tracking-wider">
+                  {language === 'hi' ? 'ध्यान देने की आवश्यकता' : 'Needs Attention'}
+                </span>
+              </div>
+              <span className="text-xs font-bold text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-950/50 px-2.5 py-0.5 rounded-full">
+                {needsAttentionChildren.length}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {needsAttentionChildren.map((child) => (
+                <button
+                  key={child.id}
+                  onClick={() => onChildSelect?.(child.id)}
+                  className="w-full flex items-center justify-between p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-red-100 dark:border-slate-800/80 shadow-sm active:scale-[0.98] transition-transform text-left outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <img src={child.avatar} alt={child.name} className="w-8 h-8 rounded-full object-cover border border-red-200" />
+                    <div>
+                      <p className="text-xs font-semibold text-gray-800 dark:text-white">
+                        {language === 'hi' ? child.nameHindi : child.name}
+                      </p>
+                      <p className="text-[10px] text-gray-500 dark:text-slate-400 font-medium">
+                        {child.nutritionStatus === 'at-risk' 
+                          ? (language === 'hi' ? 'पोषण: गंभीर जोखिम' : 'Nutrition: At-Risk')
+                          : (language === 'hi' ? 'उपस्थिति: अनियमित' : 'Attendance: Irregular')
+                        }
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 text-red-500">
+                    <span className="text-xs font-medium">{language === 'hi' ? 'विवरण देखें' : 'View Profile'}</span>
+                    <ChevronRight size={14} />
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Quick Actions */}
         <div>
-          <h3 className="text-base font-semibold text-gray-800 dark:text-white mb-3">{t('quickActions')}</h3>
-          <div className="grid grid-cols-4 gap-3">
+          <h3 className="text-base font-semibold text-gray-800 dark:text-white mb-3">
+            {language === 'hi' ? 'त्वरित विकल्प' : 'Quick Actions'}
+          </h3>
+          <div className="grid grid-cols-3 gap-3">
             {quickActions.map((action) => {
               const Icon = action.icon;
               return (
                 <button
                   key={action.label}
                   onClick={() => onNavigate(action.screen)}
-                  className="flex flex-col items-center gap-2 active:scale-95 transition-transform select-none"
+                  className="flex flex-col items-center gap-2 p-2 bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-2xl shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800/50 active:scale-95 transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
                 >
-                  <div className={`w-14 h-14 ${action.color} rounded-2xl flex items-center justify-center shadow-md`}>
-                    <Icon size={24} className="text-white" strokeWidth={2} />
+                  <div className={`w-12 h-12 ${action.color} rounded-2xl flex items-center justify-center shadow-md shadow-slate-100 dark:shadow-none`}>
+                    <Icon size={20} className="text-white" strokeWidth={2.5} />
                   </div>
-                  <span className="text-[11px] text-gray-600 dark:text-slate-350 text-center leading-tight whitespace-pre-line font-medium">
-                    {t(actionKeys[action.label] || action.label)}
+                  <span className="text-xs text-gray-600 dark:text-slate-300 text-center leading-tight whitespace-pre-line font-semibold">
+                    {language === 'hi' ? action.labelHi : action.label}
                   </span>
                 </button>
               );
@@ -295,84 +395,115 @@ export function HomeScreen({
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-2">
                 <Sparkles size={16} className="text-violet-200" />
-                <span className="text-xs font-medium text-violet-200">{t('aiRecommended')}</span>
+                <span className="text-xs font-medium text-violet-200">
+                  {language === 'hi' ? 'एआई अनुशंसित' : 'AI Recommended'}
+                </span>
               </div>
-              <h4 className="text-base font-semibold mb-1">{recTitle}</h4>
+              <h4 className="text-base font-semibold mb-1">{aiActivitySuggestion.title}</h4>
               <p className="text-xs text-violet-100 leading-relaxed">
-                {recDesc}
+                {aiActivitySuggestion.description}
               </p>
               <button
                 onClick={() => onNavigate('activities')}
-                className="mt-3 px-4 py-2 bg-white/20 rounded-xl text-xs font-medium active:bg-white/30 transition-colors"
+                className="mt-3 px-4 py-2 bg-white/20 rounded-xl text-xs font-medium active:bg-white/30 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white"
               >
-                {t('viewActivity')}
+                {language === 'hi' ? 'गतिविधि देखें' : 'View Activity'}
               </button>
             </div>
             <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center shrink-0 ml-3">
-              {recIcon === 'Activity' && <Activity size={28} className="text-white" />}
-              {recIcon === 'Palette' && <Palette size={28} className="text-white" />}
-              {recIcon === 'Music' && <Music size={28} className="text-white" />}
-              {recIcon === 'BookOpen' && <BookIcon size={28} className="text-white" />}
+              <BookIcon size={28} className="text-white" />
             </div>
           </div>
         </div>
 
-        {/* Alerts */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-gray-800 dark:text-white">{t('reminders')}</h3>
-            {pendingVisitsCount > 0 && (
-              <span className="text-[9px] px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400 font-bold">
-                {t('visitsPending', { count: pendingVisitsCount })}
-              </span>
-            )}
+        {/* Empty State Banner when no children */}
+        {totalCount === 0 && (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 text-center shadow-sm border border-gray-100 dark:border-slate-800 py-10">
+            <Users className="mx-auto text-gray-400 dark:text-slate-600 mb-3" size={40} />
+            <h4 className="text-sm font-bold text-gray-800 dark:text-white">
+              {language === 'hi' ? 'कोई बच्चा पंजीकृत नहीं है' : 'No Children Registered'}
+            </h4>
+            <p className="text-xs text-gray-500 dark:text-slate-400 mt-2 max-w-[265px] mx-auto leading-relaxed font-medium">
+              {language === 'hi' 
+                ? 'अपने आंगनवाड़ी केंद्र डेटाबेस में बच्चों को जोड़ने के लिए सेटिंग्स में जाएं या सिंक करें।'
+                : 'Add children to your Anganwadi database from the Settings tab or sync to pull online data.'
+              }
+            </p>
+            <button
+              onClick={() => onNavigate('settings')}
+              className="mt-4 px-4 py-2 bg-orange-500 text-white text-xs font-bold rounded-xl active:bg-orange-600 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+            >
+              {language === 'hi' ? 'सेटिंग्स खोलें' : 'Open Settings'}
+            </button>
           </div>
-          {alerts.map((alert, i) => {
-            const Icon = alert.icon;
-            return (
-              <button
-                key={i}
-                onClick={() => onNavigate('children')}
-                className="w-full flex items-center gap-3 p-3 bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-transform text-left"
-              >
-                <div className={`w-10 h-10 ${alert.bg} dark:bg-slate-950 rounded-xl flex items-center justify-center shrink-0`}>
-                  <Icon size={18} className={alert.color} />
-                </div>
-                <span className="text-sm text-gray-700 dark:text-slate-300 flex-1">{t(alertKeys[alert.text] || alert.text)}</span>
-                <ChevronRight size={16} className="text-gray-300 dark:text-slate-500" />
-              </button>
-            );
-          })}
-        </div>
+        )}
+
+        {/* Alerts / Reminders */}
+        {totalCount > 0 && dynamicAlerts.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-800 dark:text-white">
+                {language === 'hi' ? 'अनुस्मारक' : 'Reminders'}
+              </h3>
+              {pendingVisitsCount > 0 && (
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400 font-bold">
+                  {pendingVisitsCount} {language === 'hi' ? 'दौरे लंबित' : 'Visits Pending'}
+                </span>
+              )}
+            </div>
+            {dynamicAlerts.map((alert) => {
+              const Icon = alert.icon;
+              return (
+                <button
+                  key={alert.id}
+                  onClick={() => onNavigate(alert.screen)}
+                  className="w-full flex items-center gap-3 p-3 bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-transform text-left outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                >
+                  <div className={`w-10 h-10 ${alert.bg} rounded-xl flex items-center justify-center shrink-0`}>
+                    <Icon size={18} className={alert.color} />
+                  </div>
+                  <span className="text-xs text-gray-700 dark:text-slate-300 flex-1 font-medium">{alert.text}</span>
+                  <ChevronRight size={16} className="text-gray-300 dark:text-slate-500" />
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Daily Insight */}
-        <div className="bg-orange-50 dark:bg-orange-950/20 rounded-2xl p-4 border border-orange-100 dark:border-orange-900/20">
-          <div className="flex items-center gap-2 mb-2">
-            <TrendingUp size={16} className="text-orange-500" />
-            <span className="text-xs font-medium text-orange-600 dark:text-orange-450">{t('todayInsight')}</span>
+        {totalCount > 0 && (
+          <div className="bg-orange-50 dark:bg-orange-950/20 rounded-2xl p-4 border border-orange-100 dark:border-orange-900/20">
+            <div className="flex items-center gap-2 mb-2">
+              <TrendingUp size={16} className="text-orange-500" />
+              <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">
+                {language === 'hi' ? 'आज का विचार' : "Today's Insight"}
+              </span>
+            </div>
+            <p className="text-xs text-gray-700 dark:text-slate-300 leading-relaxed font-medium">
+              {dailyInsight}
+            </p>
           </div>
-          <p className="text-sm text-gray-700 dark:text-slate-300 leading-relaxed">
-            {dailyInsight}
-          </p>
-        </div>
+        )}
 
         {/* Time Saved Card */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-slate-800">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-950/30 rounded-xl flex items-center justify-center">
-              <Clock size={20} className="text-emerald-600 dark:text-emerald-450" />
+              <Clock size={20} className="text-emerald-600 dark:text-emerald-400" />
             </div>
             <div className="flex-1">
-              <p className="text-lg font-bold text-gray-800 dark:text-white">
-                {language === 'hi' ? `${displayTimeSaved} मिनट बचाए` : language === 'bn' ? `${displayTimeSaved} মিনিট বাঁচানো হয়েছে` : language === 'mr' ? `${displayTimeSaved} मिनिटे वाचली` : `${displayTimeSaved} minutes saved`}
+              <p className="text-base font-bold text-gray-800 dark:text-white">
+                {language === 'hi' ? `${timeSaved} मिनट बचाए` : `${timeSaved} minutes saved`}
               </p>
-              <p className="text-xs text-gray-500 dark:text-slate-400">{t('timeSavedDesc')}</p>
+              <p className="text-xs text-gray-500 dark:text-slate-400 font-medium">
+                {language === 'hi' ? 'इस सप्ताह रिपोर्टिंग समय में' : 'of reporting time this week'}
+              </p>
             </div>
             <button
               onClick={() => onNavigate('impact')}
-              className="px-3 py-1.5 bg-emerald-500 text-white text-xs font-medium rounded-lg active:bg-emerald-650 transition-colors"
+              className="px-3 py-1.5 bg-emerald-500 text-white text-xs font-bold rounded-lg active:bg-emerald-600 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
             >
-              {t('viewBtn')}
+              {language === 'hi' ? 'देखें' : 'View'}
             </button>
           </div>
         </div>
@@ -380,14 +511,17 @@ export function HomeScreen({
         {/* Last Sync */}
         <div className="flex items-center justify-center gap-2 py-2">
           <div className={`w-2 h-2 rounded-full ${isOffline ? 'bg-gray-400' : 'bg-emerald-500 animate-pulse'}`} />
-          <p className="text-[11px] text-gray-400 dark:text-slate-500">
-            {isOffline ? t('lastSynced') : t('syncedNow')}
+          <p className="text-xs text-gray-400 dark:text-slate-500 font-medium">
+            {isOffline 
+              ? (language === 'hi' ? 'अंतिम सिंक: 2 घंटे पहले' : 'Last synced: 2 hours ago') 
+              : (language === 'hi' ? 'अभी सिंक हुआ' : 'Synced just now')
+            }
           </p>
         </div>
       </div>
     </div>
   );
-}
+});
 
 function BookIcon({ size, className }: { size: number; className?: string }) {
   return (

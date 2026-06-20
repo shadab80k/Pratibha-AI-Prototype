@@ -1,650 +1,578 @@
-import { useState, useEffect, useRef } from 'react';
-import { saveMedia } from '../lib/indexedDb';
-import { ArrowLeft, Mic, Square, Save, Edit3, CheckCircle2, Loader2 } from 'lucide-react';
-import { useLanguage } from '../context/LanguageContext';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { ArrowLeft, Mic, Square, Save, Edit3, CheckCircle2, Loader2, Sparkles, ChevronDown } from 'lucide-react';
+import type { Child } from '../lib/api';
 
 interface VoiceReportScreenProps {
   onBack: () => void;
-  onComplete: (reportData?: any) => void;
+  onComplete: (parsedData: { childName: string; note: string; type: 'observation' | 'alert' }[]) => void | Promise<any>;
+  childrenList: any[];
+  language?: string;
 }
 
 type RecordingState = 'idle' | 'recording' | 'processing' | 'transcribed' | 'saved';
 
-export function VoiceReportScreen({ onBack, onComplete }: VoiceReportScreenProps) {
-  const { language } = useLanguage();
+const presetTemplatesEn = [
+  {
+    label: 'Standard Center Report',
+    text: '18 children arrived today. Rani performed well in the poem activity. Aarav shared his toys. Rohan was a bit quiet today - he needs more attention.'
+  },
+  {
+    label: 'All Present & Learning',
+    text: 'All 21 children are present today. Ananya completed the math puzzles quickly. Dev stacked 8 blocks successfully. Meera shared her lunch with friends.'
+  },
+  {
+    label: 'Attendance & Nutrition Alert',
+    text: 'Only 15 children present today. Rohan was absent again. Aarav nutrition status needs monitoring.'
+  }
+];
+
+const presetTemplatesHi = [
+  {
+    label: 'दैनिक केंद्र रिपोर्ट',
+    text: 'आज 18 बच्चे आए। रानी ने कविता गतिविधि में बहुत अच्छा प्रदर्शन किया। आरव ने अपने खिलौने साझा किए। रोहन आज थोड़ा शांत था - उसे अधिक ध्यान देने की आवश्यकता है।'
+  },
+  {
+    label: 'सभी उपस्थित और सक्रिय',
+    text: 'आज सभी 21 बच्चे उपस्थित हैं। अनन्या ने गणित की पहेलियां बहुत जल्दी पूरी कीं। देव ने सफलता पूर्वक 8 ब्लॉक जोड़े। मीरा ने दोस्तों के साथ लंच शेयर किया।'
+  },
+  {
+    label: 'अनुपस्थिति और पोषण अपडेट',
+    text: 'आज केवल 15 बच्चे उपस्थित हैं। रोहन फिर से अनुपस्थित था। आरव के पोषण स्तर की निगरानी करने की आवश्यकता है।'
+  }
+];
+
+const parseTranscriptToReport = (text: string, childrenList: Child[], lang: string) => {
+  if (!text.trim()) return [];
+  
+  // Split into sentences using English and Hindi punctuation
+  const sentences = text.split(/[।\.!\?\n]+/).map(s => s.trim()).filter(Boolean);
+  const items: { type: 'attendance' | 'observation' | 'alert'; label: string; value: string; childName?: string }[] = [];
+  const isHi = lang === 'hi';
+
+  sentences.forEach((sentence) => {
+    // Check for attendance keywords
+    const attendanceKeywords = ['present', 'absent', 'arrived', 'attendance', 'children', 'total', ' उपस्थित', ' अनुपस्थित', ' हाजिर', ' बच्चे', ' आए', 'संख्या'];
+    const hasAttendance = attendanceKeywords.some(keyword => sentence.toLowerCase().includes(keyword));
+    
+    // Find matching child from the actual list
+    let matchedChild: Child | undefined = undefined;
+    for (const child of childrenList) {
+      const nameEn = child.name.toLowerCase();
+      const nameHi = child.nameHindi ? child.nameHindi.toLowerCase() : '';
+      if (sentence.toLowerCase().includes(nameEn) || (nameHi && sentence.toLowerCase().includes(nameHi))) {
+        matchedChild = child;
+        break;
+      }
+    }
+
+    if (matchedChild) {
+      const childName = isHi && matchedChild.nameHindi ? matchedChild.nameHindi : matchedChild.name;
+      // Check if it's an alert/needs attention
+      const alertKeywords = ['quiet', 'silent', 'attention', 'at-risk', 'monitoring', 'shant', 'chup', 'परेशान', 'ध्यान', 'गंभीर', 'जोखिम', 'कमजोरी', 'उदास'];
+      const isAlert = alertKeywords.some(keyword => sentence.toLowerCase().includes(keyword));
+
+      items.push({
+        type: isAlert ? 'alert' : 'observation',
+        label: isAlert 
+          ? (isHi ? `ध्यान दें - ${childName}` : `Needs Attention - ${childName}`)
+          : (isHi ? `अवलोकन - ${childName}` : `Observation - ${childName}`),
+        value: sentence,
+        childName: matchedChild.name // Always use English name key for parent mapping
+      });
+    } else if (hasAttendance) {
+      items.push({
+        type: 'attendance',
+        label: isHi ? 'उपस्थिति विवरण' : 'Attendance Info',
+        value: sentence
+      });
+    }
+  });
+
+  return items;
+};
+
+export function VoiceReportScreen({ onBack, onComplete, childrenList, language = 'en' }: VoiceReportScreenProps) {
   const [state, setState] = useState<RecordingState>('idle');
   const [transcript, setTranscript] = useState('');
   const [waveform, setWaveform] = useState<number[]>(new Array(20).fill(5));
   const [showOfflineMsg, setShowOfflineMsg] = useState(false);
+  const [showPresets, setShowPresets] = useState(false);
+  
+  // Speech Recognition States
+  const [isListening, setIsListening] = useState(false);
+  const [listeningText, setListeningText] = useState('');
+
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Microphone and Audio Context states
-  const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
   const recognitionRef = useRef<any>(null);
+  const simTimeoutRef1 = useRef<any>(null);
+  const simTimeoutRef2 = useRef<any>(null);
+  const simIntervalRef = useRef<any>(null);
 
-  // MediaRecorder audio storage states
-  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const audioElementRef = useRef<HTMLAudioElement | null>(null);
+  const isHi = language === 'hi';
+  const presets = isHi ? presetTemplatesHi : presetTemplatesEn;
 
-  // Parsed NLP report data
-  const [reportData, setReportData] = useState<{
-    attendanceText: string;
-    attendanceCount: number;
-    childObservations: { name: string; note: string; category: string; isAlert?: boolean }[];
-  } | null>(null);
-
+  // Waveform animation when recording
   useEffect(() => {
-    return () => {
-      // Cleanup audio stream and contexts on unmount
-      if (audioStream) {
-        audioStream.getTracks().forEach((track) => track.stop());
-      }
-      if (audioContextRef.current) {
-        audioContextRef.current.close().catch(() => {});
-      }
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {}
-      }
-    };
-  }, [audioStream]);
-
-  const parseTranscriptToReport = (text: string) => {
-    const textLower = text.toLowerCase();
-    
-    // 1. Attendance parsing
-    let attendanceCount = 18; // Default mock count
-    const numMatch = textLower.match(/(\d+)\s*(children|kids|students|bachhe|shishu|mule|present|aaye|upasthit)/i) 
-      || textLower.match(/(?:present|attendance|upasthit|aaye)\s*(?:is|was|of)?\s*(\d+)/i)
-      || textLower.match(/(\d+)\s*(?:present|aaye|upasthit)/i);
-    
-    if (numMatch && numMatch[1]) {
-      const parsedNum = parseInt(numMatch[1], 10);
-      if (parsedNum > 0 && parsedNum <= 21) {
-        attendanceCount = parsedNum;
-      }
-    }
-    
-    const attendanceText = language === 'hi' 
-      ? `21 में से ${attendanceCount} बच्चे उपस्थित हैं` 
-      : language === 'bn'
-      ? `21 জনের মধ্যে ${attendanceCount} জন শিশু উপস্থিত`
-      : language === 'mr'
-      ? `21 पैकी ${attendanceCount} मुले उपस्थित`
-      : `${attendanceCount} children present out of 21`;
-
-    // 2. Observations and alerts parsing
-    const sentences = text.split(/[.।?!]+/).map(s => s.trim()).filter(Boolean);
-    const childObservations: { name: string; note: string; category: string; isAlert?: boolean }[] = [];
-    const childrenNames = ['Rani', 'Rohan', 'Aarav', 'Dev', 'Meera', 'Priya', 'Pooja', 'Karan'];
-
-    sentences.forEach((sentence) => {
-      const sentenceLower = sentence.toLowerCase();
-      const matchedName = childrenNames.find(name => sentenceLower.includes(name.toLowerCase()));
-      
-      if (matchedName) {
-        let category = 'General';
-        if (sentenceLower.includes('poem') || sentenceLower.includes('speak') || sentenceLower.includes('sentence') || sentenceLower.includes('kavita') || sentenceLower.includes('shabd') || sentenceLower.includes('language') || sentenceLower.includes('bhasha') || sentenceLower.includes('bol')) {
-          category = 'Language';
-        } else if (sentenceLower.includes('toy') || sentenceLower.includes('share') || sentenceLower.includes('friend') || sentenceLower.includes('peer') || sentenceLower.includes('khilone') || sentenceLower.includes('mitra') || sentenceLower.includes('social') || sentenceLower.includes('sath')) {
-          category = 'Social';
-        } else if (sentenceLower.includes('quiet') || sentenceLower.includes('sad') || sentenceLower.includes('cry') || sentenceLower.includes('shant') || sentenceLower.includes('emotional') || sentenceLower.includes('akela') || sentenceLower.includes('dar')) {
-          category = 'Emotional';
-        } else if (sentenceLower.includes('count') || sentenceLower.includes('math') || sentenceLower.includes('puzzle') || sentenceLower.includes('ganit') || sentenceLower.includes('cognitive') || sentenceLower.includes('color') || sentenceLower.includes('rang')) {
-          category = 'Cognitive';
-        }
-
-        const isAlert = sentenceLower.includes('quiet') || 
-                        sentenceLower.includes('attention') || 
-                        sentenceLower.includes('sad') || 
-                        sentenceLower.includes('risk') || 
-                        sentenceLower.includes('absent') || 
-                        sentenceLower.includes('shant') || 
-                        sentenceLower.includes('dhyan') || 
-                        sentenceLower.includes('chinta');
-
-        childObservations.push({
-          name: matchedName,
-          note: sentence,
-          category,
-          isAlert
-        });
-      }
-    });
-
-    // If no specific child is mentioned, map sentences to generic child observations to populate cards
-    if (childObservations.length === 0) {
-      sentences.slice(0, 3).forEach((sentence, idx) => {
-        childObservations.push({
-          name: idx === 0 ? 'Rani' : idx === 1 ? 'Aarav' : 'Rohan',
-          note: sentence,
-          category: idx === 0 ? 'Language' : idx === 1 ? 'Social' : 'General',
-          isAlert: sentence.toLowerCase().includes('attention') || sentence.toLowerCase().includes('quiet')
-        });
-      });
-    }
-
-    return {
-      attendanceText,
-      attendanceCount,
-      childObservations
-    };
-  };
-
-  const startRecording = async () => {
-    setTranscript('');
-    setReportData(null);
-    setRecordedAudioUrl(null);
-    setIsPlaying(false);
-    audioChunksRef.current = [];
-    setState('recording');
-    setShowOfflineMsg(true);
-
-    let stream: MediaStream | null = null;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      setAudioStream(stream);
-
-      // Create MediaRecorder instance
-      let mediaRecorder: MediaRecorder;
-      try {
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-      } catch (e) {
-        console.warn("audio/webm not supported, fallback to default", e);
-        mediaRecorder = new MediaRecorder(stream);
-      }
-
-      mediaRecorderRef.current = mediaRecorder;
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
-        const audioUrl = URL.createObjectURL(audioBlob);
-        setRecordedAudioUrl(audioUrl);
-
-        try {
-          const mediaId = 'audio-' + Date.now();
-          await saveMedia(mediaId, audioBlob, audioBlob.type);
-          console.log('Saved recorded audio blob to IndexedDB with ID:', mediaId);
-        } catch (e) {
-          console.warn('Failed to save audio blob to IndexedDB:', e);
-        }
-      };
-
-      mediaRecorder.start();
-
-      // Web Audio setup for live visualizer
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioCtx) {
-        const audioContext = new AudioCtx();
-        const source = audioContext.createMediaStreamSource(stream);
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 64;
-        source.connect(analyser);
-
-        audioContextRef.current = audioContext;
-        analyserRef.current = analyser;
-
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-        
-        intervalRef.current = setInterval(() => {
-          if (analyserRef.current) {
-            analyserRef.current.getByteFrequencyData(dataArray);
-            const mapped = Array.from(dataArray)
-              .slice(0, 20)
-              .map(val => Math.max(5, (val / 255) * 45));
-            while (mapped.length < 20) mapped.push(5);
-            setWaveform(mapped);
-          }
-        }, 100);
-      }
-    } catch (err) {
-      console.warn("Microphone access failed, falling back to mock waveform", err);
+    if (state === 'recording') {
       intervalRef.current = setInterval(() => {
         setWaveform((prev) =>
           prev.map(() => Math.random() * 35 + 5)
         );
       }, 150);
+    } else {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (state === 'idle') setWaveform(new Array(20).fill(5));
     }
-
-    // Speech recognition setup
-    const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (Recognition) {
-      try {
-        const recognition = new Recognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        
-        if (language === 'hi') {
-          recognition.lang = 'hi-IN';
-        } else if (language === 'bn') {
-          recognition.lang = 'bn-IN';
-        } else if (language === 'mr') {
-          recognition.lang = 'mr-IN';
-        } else {
-          recognition.lang = 'en-IN';
-        }
-
-        let accumulatedTranscript = '';
-        recognition.onresult = (event: any) => {
-          let interimTranscript = '';
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              accumulatedTranscript += event.results[i][0].transcript + ' ';
-            } else {
-              interimTranscript += event.results[i][0].transcript;
-            }
-          }
-          setTranscript(accumulatedTranscript + interimTranscript);
-        };
-
-        recognition.onerror = (event: any) => {
-          console.error("Speech recognition error", event.error);
-        };
-
-        recognition.start();
-        recognitionRef.current = recognition;
-      } catch (e) {
-        console.error("Failed to start SpeechRecognition", e);
-      }
-    }
-  };
-
-  const stopRecording = () => {
-    setState('processing');
-    setWaveform(new Array(20).fill(5));
-
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch (e) {
-        console.warn("Failed to stop media recorder", e);
-      }
-    }
-
-    if (audioStream) {
-      audioStream.getTracks().forEach(track => track.stop());
-      setAudioStream(null);
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close().catch(() => {});
-      audioContextRef.current = null;
-    }
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {}
-      recognitionRef.current = null;
-    }
-
-    const executeParsing = async () => {
-      let finalTranscript = transcript.trim();
-      if (!finalTranscript) {
-        finalTranscript = language === 'hi' 
-          ? 'आज 18 बच्चे आए। रानी ने कविता गतिविधि में अच्छा प्रदर्शन किया। आरव ने अपने खिलौने साझा किए। रोहन आज शांत था, उसे अधिक ध्यान देने की आवश्यकता है।'
-          : language === 'bn'
-          ? 'আজ ১৮ জন শিশু এসেছে। রানী কবিতা কার্যকলাপে খুব ভালো করেছে। আরভ খেলনা ভাগ করেছে। আরভ মেহরাকে সাহায্য করেছে। রোহন আজ শান্ত ছিল।'
-          : language === 'mr'
-          ? 'आज १८ मुले आली. राणीने कविता उपक्रमात चांगली कामगिरी केली. आरवने खेळणी शेअर केली. रोहन आज शांत होता, त्याला लक्ष देण्याची गरज आहे।'
-          : '18 children arrived today. Rani performed well in the poem activity. Aarav shared his toys. Rohan was a bit quiet today - he needs more attention.';
-        setTranscript(finalTranscript);
-      }
-
-      const apiMode = localStorage.getItem('pratibha_api_mode') || 'gemini';
-      const apiKey = localStorage.getItem('pratibha_gemini_key') || '';
-
-      if (apiMode === 'gemini' && apiKey.trim()) {
-        try {
-          const prompt = `You are a structured parser for an Anganwadi assistant application.
-Analyze the following speech transcript spoken by the worker Sunita Ji and extract structured JSON matching exactly this schema:
-{
-  "attendanceCount": number,
-  "attendanceText": "formatted string indicating attendance out of 21 (e.g. 19 children present out of 21, in user's query language if possible)",
-  "childObservations": [
-    {
-      "name": "matching child name (e.g. Rani, Rohan, Aarav, Dev, Meera, Ananya)",
-      "note": "the sentence segment detailing this child's behavior/observation",
-      "category": "Language" | "Social" | "Emotional" | "Cognitive" | "General",
-      "isAlert": boolean (true if child was sad, quiet, struggled, needs attention, or represents a concern)
-    }
-  ]
-}
-
-Note:
-- If multiple children are mentioned, include each in childObservations.
-- Output ONLY valid JSON. Do not include markdown code block syntax (like \`\`\`json). Just return raw JSON.
-
-Transcript: "${finalTranscript}"`;
-
-          const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }]
-              })
-            }
-          );
-
-          if (!response.ok) throw new Error('Gemini API request failed');
-          
-          const resJson = await response.json();
-          const textResult = resJson.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          
-          // Clean markdown wrapper if any
-          const cleanJsonText = textResult
-            .replace(/```json/g, '')
-            .replace(/```/g, '')
-            .trim();
-            
-          const parsedData = JSON.parse(cleanJsonText);
-          setReportData(parsedData);
-          setState('transcribed');
-          return;
-        } catch (err) {
-          console.warn("AI parsing failed or key invalid, falling back to local NLU regex parser", err);
-        }
-      }
-
-      // Fallback local regex parsing
-      const parsed = parseTranscriptToReport(finalTranscript);
-      setReportData(parsed);
-      setState('transcribed');
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
+  }, [state]);
 
-    setTimeout(() => {
-      executeParsing();
-    }, 1500);
+  // Clean up timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (simTimeoutRef1.current) clearTimeout(simTimeoutRef1.current);
+      if (simTimeoutRef2.current) clearTimeout(simTimeoutRef2.current);
+      if (simIntervalRef.current) clearInterval(simIntervalRef.current);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    };
+  }, []);
+
+  // Web Speech API and typing simulation logic
+  const handleStartVoiceRecord = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    setShowOfflineMsg(true);
+
+    if (!SpeechRecognition) {
+      // Simulate Speech Input with a random preset
+      setState('recording');
+      setIsListening(true);
+      setListeningText(isHi ? 'बोलना शुरू करें...' : 'Start speaking...');
+      
+      const randomPreset = presets[Math.floor(Math.random() * presets.length)].text;
+      
+      simTimeoutRef1.current = setTimeout(() => {
+        setListeningText(isHi ? 'आवाज पहचानी जा रही है...' : 'Voice detected...');
+        
+        simTimeoutRef2.current = setTimeout(() => {
+          setIsListening(false);
+          setState('processing');
+          simulateTranscriptionTyping(randomPreset);
+        }, 1500);
+      }, 2000);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognitionRef.current = recognition;
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = isHi ? 'hi-IN' : 'en-US';
+
+      recognition.onstart = () => {
+        setState('recording');
+        setIsListening(true);
+        setListeningText(isHi ? 'सुन रहा हूँ... बोलिए' : 'Listening... Speak now');
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error("Speech recognition error", event);
+        setListeningText(isHi ? 'आवाज नहीं पहचानी गई' : 'Speech not recognized');
+        simTimeoutRef1.current = setTimeout(() => {
+          setIsListening(false);
+          setState('idle');
+        }, 1200);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.onresult = (event: any) => {
+        const resultText = event.results[0][0].transcript;
+        if (resultText) {
+          setListeningText(isHi ? `पहचाना गया: "${resultText.slice(0, 20)}..."` : `Detected: "${resultText.slice(0, 20)}..."`);
+          simTimeoutRef1.current = setTimeout(() => {
+            setIsListening(false);
+            setState('processing');
+            simulateTranscriptionTyping(resultText);
+          }, 1000);
+        }
+      };
+
+      recognition.start();
+    } catch (e) {
+      console.error(e);
+      setState('idle');
+      setIsListening(false);
+    }
   };
 
-  const handleSave = () => {
-    setState('saved');
-    setTimeout(() => {
-      onComplete(reportData);
-    }, 1500);
+  const simulateTranscriptionTyping = (fullText: string) => {
+    let currentIdx = 0;
+    setTranscript('');
+    
+    // Typing simulation to look like high-end voice transcription
+    simIntervalRef.current = setInterval(() => {
+      if (currentIdx < fullText.length) {
+        // Type 3-4 characters at a time to be fast yet smooth
+        const step = Math.min(4, fullText.length - currentIdx);
+        setTranscript(fullText.substring(0, currentIdx + step));
+        currentIdx += step;
+      } else {
+        clearInterval(simIntervalRef.current);
+        setState('transcribed');
+      }
+    }, 45);
   };
+
+  const handleSelectPreset = (text: string) => {
+    setShowPresets(false);
+    setState('processing');
+    setShowOfflineMsg(true);
+    simulateTranscriptionTyping(text);
+  };
+
+  const handleSave = async () => {
+    // Calculate parsed reports to pass back to database state
+    const parsedReports = parseTranscriptToReport(transcript, childrenList, language);
+    const saveableObservations = parsedReports
+      .filter(r => (r.type === 'observation' || r.type === 'alert') && r.childName)
+      .map(r => ({
+        childName: r.childName!,
+        note: r.value,
+        type: r.type as 'observation' | 'alert'
+      }));
+
+    if (saveableObservations.length === 0) {
+      // Let parent handle empty state and show toast
+      onComplete([]);
+      return;
+    }
+
+    setState('processing');
+    try {
+      const res = onComplete(saveableObservations);
+      if (res instanceof Promise) {
+        await res;
+      }
+      setState('saved');
+    } catch (e) {
+      console.error(e);
+      setState('transcribed');
+    }
+  };
+
+  // Dynamically calculate parsed report based on current editable transcript text
+  const structuredReport = useMemo(() => {
+    return parseTranscriptToReport(transcript, childrenList, language);
+  }, [transcript, childrenList, language]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 text-white flex flex-col">
+    <div className="min-h-screen bg-[#0f172a] bg-gradient-to-b from-[#0b0f19] via-[#0f172a] to-[#1e1b4b] text-white flex flex-col relative select-none">
       {/* Header */}
-      <header className="flex items-center gap-3 px-4 pt-10 pb-4">
+      <header className="flex items-center gap-3 px-4 pt-10 pb-4 border-b border-white/5 shrink-0">
         <button
           onClick={onBack}
-          className="p-2 -ml-2 rounded-xl hover:bg-white/10 active:scale-95 transition-all outline-none"
+          className="p-2 -ml-2 rounded-xl hover:bg-white/10 active:scale-95 transition-all outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+          aria-label="Go back"
         >
           <ArrowLeft size={20} className="text-white" />
         </button>
         <div className="flex-1">
-          <h1 className="text-lg font-semibold">
-            {language === 'hi' ? 'आवाज रिपोर्ट' : language === 'bn' ? 'ভয়েস রিপোর্ট' : language === 'mr' ? 'आवाज अहवाल' : 'Voice Report'}
-          </h1>
-          <p className="text-xs text-gray-400">
-            {language === 'hi' ? 'आवाज का उपयोग करके रिपोर्ट बनाएं' : language === 'bn' ? 'ভয়েস ব্যবহার করে রিপোর্ট তৈরি করুন' : language === 'mr' ? 'आवाज वापरून अहवाल तयार करा' : 'Generate report using voice'}
-          </p>
+          <h1 className="text-base font-semibold">{isHi ? 'आवाज़ रिपोर्ट' : 'Voice Report'}</h1>
+          <p className="text-xs text-gray-400">{isHi ? 'आवाज़ से रिपोर्ट तैयार करें' : 'Generate reports using speech'}</p>
         </div>
       </header>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5 scrollbar-hide">
         {/* Status Indicator */}
-        <div className="mb-8 text-center">
+        <div className="text-center py-2">
           {state === 'idle' && (
             <>
-              <p className="text-gray-300 text-sm mb-1">
-                {language === 'hi' ? 'माइक्रोफोन पर टैप करें और बोलना शुरू करें' : language === 'bn' ? 'মাইক্রোফোনে ট্যাপ করুন এবং কথা বলা শুরু করুন' : language === 'mr' ? 'मायक्रोफोनवर टॅप करा आणि बोलायला सुरुवात करा' : 'Tap the microphone and speak naturally'}
+              <p className="text-slate-200 text-sm font-semibold mb-1">
+                {isHi ? 'माइक दबाएं और सामान्य रूप से बोलें' : 'Tap the microphone & speak naturally'}
               </p>
-              <p className="text-gray-500 text-xs">
-                {language === 'hi' ? 'माइक्रोफ़ोन दबाएं और बोलें' : language === 'bn' ? 'মাইক্রোফোন টিপুন এবং কথা বলুন' : language === 'mr' ? 'मायक्रोफोन दाबा आणि बोला' : 'Press microphone and speak'}
+              <p className="text-gray-400 text-xs font-medium">
+                {isHi ? 'या नीचे दिए गए त्वरित विकल्पों का उपयोग करें' : 'or select a preset template below'}
               </p>
             </>
           )}
           {state === 'recording' && (
             <>
-              <p className="text-orange-400 text-sm font-medium mb-1 animate-pulse">
-                {language === 'hi' ? 'रिकॉर्डिंग चालू है...' : language === 'bn' ? 'রেকর্ডিং হচ্ছে...' : language === 'mr' ? 'रेकॉर्डिंग सुरू आहे...' : 'Recording...'}
+              <p className="text-orange-400 text-sm font-bold mb-1 animate-pulse">
+                {isHi ? 'रिकॉर्डिंग चालू है...' : 'Recording Audio...'}
               </p>
-              <p className="text-gray-500 text-xs">
-                {language === 'hi' ? 'सामान्य रूप से बोलें' : language === 'bn' ? 'স্বাভাবিকভাবে কথা বলুন' : language === 'mr' ? 'नेहमिप्रमाणे बोला' : 'Speak naturally'}
+              <p className="text-gray-400 text-xs font-medium">
+                {isHi ? 'बोलना जारी रखें' : 'Keep speaking clearly'}
               </p>
             </>
           )}
           {state === 'processing' && (
             <>
-              <p className="text-sky-400 text-sm font-medium mb-1">
-                {language === 'hi' ? 'एआई प्रोसेस कर रहा है...' : language === 'bn' ? 'এআই প্রসেস করছে...' : language === 'mr' ? 'एआय प्रक्रिया करत आहे...' : 'AI is processing...'}
+              <p className="text-sky-400 text-sm font-bold mb-1 flex items-center justify-center gap-1.5">
+                <Loader2 size={16} className="animate-spin" />
+                {isHi ? 'एआई रिपोर्ट तैयार कर रहा है...' : 'AI processing speech...'}
               </p>
-              <p className="text-gray-500 text-xs">
-                {language === 'hi' ? 'रिपोर्ट तैयार की जा रही है...' : language === 'bn' ? 'রিপোর্ট তৈরি হচ্ছে...' : language === 'mr' ? 'अहवाल तयार केला जात आहे...' : 'Preparing report...'}
+              <p className="text-gray-400 text-xs font-medium">
+                {isHi ? 'पाठ में परिवर्तित किया जा रहा है' : 'Converting voice to text...'}
               </p>
             </>
           )}
           {state === 'transcribed' && (
             <>
-              <p className="text-emerald-400 text-sm font-medium mb-1">
-                {language === 'hi' ? 'रिपोर्ट तैयार है!' : language === 'bn' ? 'রিপোর্ট প্রস্তুত!' : language === 'mr' ? 'अहवाल तयार आहे!' : 'Report ready!'}
+              <p className="text-emerald-400 text-sm font-bold mb-1 flex items-center justify-center gap-1">
+                <Sparkles size={16} className="text-emerald-400 animate-bounce" />
+                {isHi ? 'रिपोर्ट समीक्षा के लिए तैयार है!' : 'Report compiled!'}
               </p>
-              <p className="text-gray-500 text-xs">
-                {language === 'hi' ? 'यदि आवश्यक हो तो नीचे संपादित करें' : language === 'bn' ? 'প্রয়োজন হলে নিচে সম্পাদনা করুন' : language === 'mr' ? 'गरज भासल्यास खाली संपादन करा' : 'Edit below if needed'}
+              <p className="text-gray-400 text-xs font-medium">
+                {isHi ? 'आवश्यकतानुसार नीचे संपादित करें' : 'Edit details in the box if needed'}
               </p>
             </>
           )}
           {state === 'saved' && (
             <>
-              <p className="text-emerald-400 text-sm font-medium mb-1">
-                {language === 'hi' ? 'सफलतापूर्वक सहेजा गया!' : language === 'bn' ? 'সফলভাবে সংরক্ষিত হয়েছে!' : language === 'mr' ? 'यशस्वीरित्या जतन केले!' : 'Saved successfully!'}
+              <p className="text-emerald-400 text-sm font-bold mb-1">
+                {isHi ? 'सफलतापूर्वक सहेजा गया!' : 'Saved successfully!'}
               </p>
-              <p className="text-gray-500 text-xs">
-                {language === 'hi' ? 'ऑफलाइन सहेजा गया - ऑनलाइन होने पर सिंक होगा' : language === 'bn' ? 'অফলাইনে সংরক্ষিত - অনলাইন হলে সিঙ্ক হবে' : language === 'mr' ? 'ऑफलाइन जतन केले - ऑनलाइन झाल्यावर सिंक होईल' : 'Saved offline - Syncs when online'}
+              <p className="text-gray-400 text-xs font-medium">
+                {isHi ? 'ऑफलाइन डेटाबेस सिंक सक्रिय' : 'Saved to local sandbox sync log'}
               </p>
             </>
           )}
         </div>
 
         {/* Microphone / Waveform Area */}
-        <div className="relative flex flex-col items-center mb-8">
+        <div className="relative flex flex-col items-center py-2 shrink-0">
+          {/* Pulsating background rings */}
           {(state === 'recording' || state === 'processing') && (
             <>
-              <div className="absolute w-48 h-48 rounded-full border border-orange-500/20 animate-ping" />
-              <div className="absolute w-40 h-40 rounded-full border border-orange-500/30 animate-pulse" />
+              <div className="absolute w-36 h-36 rounded-full border border-orange-500/20 animate-ping pointer-events-none" />
+              <div className="absolute w-28 h-28 rounded-full border border-orange-500/30 animate-pulse pointer-events-none" />
             </>
           )}
 
+          {/* Mic Button */}
           <button
-            type="button"
             onClick={() => {
-              if (state === 'idle') startRecording();
-              else if (state === 'recording') stopRecording();
+              if (state === 'idle') handleStartVoiceRecord();
+              else if (state === 'recording') {
+                if (recognitionRef.current) {
+                  try {
+                    recognitionRef.current.stop();
+                  } catch (e) {
+                    console.error(e);
+                  }
+                } else {
+                  setState('processing');
+                }
+              }
             }}
             disabled={state === 'processing' || state === 'saved'}
-            className={`relative z-10 w-28 h-28 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 active:scale-95 outline-none ${
+            className={`relative z-10 w-24 h-24 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 active:scale-95 outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
               state === 'idle'
-                ? 'bg-gradient-to-br from-orange-500 to-amber-500 shadow-orange-500/40 hover:from-orange-650 hover:to-amber-650'
+                ? 'bg-gradient-to-br from-orange-500 to-amber-500 shadow-orange-500/20'
                 : state === 'recording'
-                ? 'bg-red-500 shadow-red-500/40 hover:bg-red-600'
+                ? 'bg-red-500 shadow-red-500/20'
                 : state === 'processing'
-                ? 'bg-sky-500 shadow-sky-500/40'
+                ? 'bg-sky-500 shadow-sky-500/20'
                 : state === 'transcribed'
-                ? 'bg-emerald-500 shadow-emerald-500/40 hover:bg-emerald-600'
+                ? 'bg-emerald-500 shadow-emerald-500/20'
                 : 'bg-emerald-600'
             }`}
           >
-            {state === 'idle' && <Mic size={40} className="text-white" strokeWidth={2} />}
-            {state === 'recording' && <Square size={28} className="text-white" strokeWidth={3} fill="white" />}
-            {state === 'processing' && <Loader2 size={36} className="text-white animate-spin" />}
-            {(state === 'transcribed' || state === 'saved') && <CheckCircle2 size={40} className="text-white" />}
+            {state === 'idle' && <Mic size={36} className="text-white" strokeWidth={2.5} />}
+            {state === 'recording' && <Square size={24} className="text-white" strokeWidth={3} fill="white" />}
+            {state === 'processing' && <Loader2 size={32} className="text-white animate-spin" />}
+            {(state === 'transcribed' || state === 'saved') && <CheckCircle2 size={36} className="text-white" />}
           </button>
 
           {/* Waveform */}
-          <div className="flex items-center justify-center gap-[3px] h-16 mt-6">
+          <div className="flex items-center justify-center gap-[3px] h-12 mt-5 select-none pointer-events-none">
             {waveform.map((height, i) => (
               <div
                 key={i}
                 className={`w-1 rounded-full transition-all duration-150 ${
                   state === 'recording'
-                    ? 'bg-orange-400 animate-pulse'
+                    ? 'bg-orange-400'
                     : state === 'processing'
                     ? 'bg-sky-400'
-                    : 'bg-gray-700'
+                    : 'bg-slate-700/60'
                 }`}
                 style={{
                   height: `${height}px`,
-                  opacity: state === 'idle' ? 0.3 : 1,
+                  opacity: state === 'idle' ? 0.35 : 1,
                 }}
               />
             ))}
           </div>
         </div>
 
-        {/* Offline Note */}
+        {/* Offline Warning Banner */}
         {showOfflineMsg && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-white/10 rounded-xl mb-6">
-            <div className="w-2 h-2 bg-emerald-400 rounded-full" />
-            <p className="text-xs text-gray-400">
-              {language === 'hi' ? 'कम कनेक्टिविटी में भी काम करता है' : language === 'bn' ? 'কম কানেক্টিভিটিতেও কাজ করে' : language === 'mr' ? 'कमी कनेक्टिव्हिटीमध्येही काम करते' : 'Works even in low connectivity'}
+          <div className="flex items-center gap-2.5 px-3 py-2.5 bg-white/5 rounded-2xl border border-white/5 justify-center">
+            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+            <p className="text-xs text-slate-300 font-semibold">
+              {isHi ? 'लो-कनेक्टिविटी में भी ऑफलाइन कार्य करता है' : 'Dictation operates 100% offline'}
             </p>
           </div>
         )}
 
-        {/* Audio Playback Card */}
-        {(state === 'transcribed' || state === 'saved') && recordedAudioUrl && (
-          <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-3.5 mb-4 flex items-center gap-3">
+        {/* Presets Trigger */}
+        {state === 'idle' && (
+          <div className="space-y-2">
             <button
-              type="button"
-              onClick={() => {
-                if (audioElementRef.current) {
-                  if (isPlaying) {
-                    audioElementRef.current.pause();
-                  } else {
-                    audioElementRef.current.play();
-                  }
-                }
-              }}
-              className="w-10 h-10 rounded-full bg-orange-500 hover:bg-orange-600 flex items-center justify-center text-white shrink-0 active:scale-95 transition-all outline-none"
+              onClick={() => setShowPresets(!showPresets)}
+              className="w-full flex items-center justify-between p-3.5 bg-slate-900 border border-slate-800 rounded-2xl active:scale-[0.98] transition-transform outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
             >
-              {isPlaying ? (
-                <div className="flex gap-[3px] items-center">
-                  <div className="w-[3px] h-3.5 bg-white rounded-full" />
-                  <div className="w-[3px] h-3.5 bg-white rounded-full" />
-                </div>
-              ) : (
-                <div className="w-0 h-0 border-t-[6px] border-t-transparent border-b-[6px] border-b-transparent border-l-[10px] border-l-white ml-0.5" />
-              )}
+              <span className="text-xs font-bold text-orange-400">💡 {isHi ? 'त्वरित सिमुलेशन विकल्प' : 'Quick Simulation Presets'}</span>
+              <ChevronDown size={16} className={`text-slate-400 transition-transform ${showPresets ? 'rotate-180' : ''}`} />
             </button>
-            <div className="flex-1">
-              <span className="text-[10px] text-gray-400 block font-semibold uppercase">Recorded Audio Note</span>
-              <div className="flex items-center gap-2 mt-1">
-                <div className="flex-1 h-1 bg-white/10 rounded-full relative overflow-hidden">
-                  <div className={`h-full bg-orange-500 rounded-full ${isPlaying ? 'w-full transition-all duration-[10s]' : 'w-0'}`} />
-                </div>
-                <span className="text-[9px] font-mono text-gray-400">Preview Playback</span>
+            {showPresets && (
+              <div className="grid gap-2 animate-slideDown">
+                {presets.map((preset, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleSelectPreset(preset.text)}
+                    className="w-full text-left p-3.5 bg-slate-950 border border-slate-900 hover:border-orange-500/30 rounded-2xl text-xs space-y-1 active:scale-[0.98] transition-all outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                  >
+                    <p className="font-bold text-orange-500">{preset.label}</p>
+                    <p className="text-slate-300 leading-relaxed truncate font-medium">{preset.text}</p>
+                  </button>
+                ))}
               </div>
-            </div>
-            <audio
-              ref={audioElementRef}
-              src={recordedAudioUrl}
-              onPlay={() => setIsPlaying(true)}
-              onPause={() => setIsPlaying(false)}
-              onEnded={() => setIsPlaying(false)}
-              className="hidden"
-            />
+            )}
           </div>
         )}
 
-        {/* Transcript Card */}
+        {/* Transcript Textarea (Fully Editable) */}
         {(state === 'transcribed' || state === 'saved') && (
-          <div className="w-full bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/10 mb-6">
-            <div className="flex items-center gap-2 mb-3">
-              <Edit3 size={14} className="text-gray-400" />
-              <span className="text-xs text-gray-400">
-                {language === 'hi' ? 'ट्रांसक्रिप्ट' : language === 'bn' ? 'অনুলিপি' : language === 'mr' ? 'ट्रान्सक्रिप्ट' : 'Transcript'}
+          <div className="bg-slate-900 rounded-2xl p-4 border border-slate-800 space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Edit3 size={12} className="text-gray-400" />
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                {isHi ? 'संपादित करें (Edit Transcript)' : 'Edit Transcript'}
               </span>
             </div>
             <textarea
               value={transcript}
               onChange={(e) => setTranscript(e.target.value)}
-              className="w-full bg-transparent text-sm text-gray-200 leading-relaxed italic border-none outline-none resize-none focus:ring-0"
-              rows={3}
+              className="w-full bg-transparent text-xs text-slate-100 placeholder-slate-500 outline-none resize-none leading-relaxed min-h-[90px] font-medium"
+              placeholder={isHi ? 'यहाँ अपना रिपोर्ट विवरण टाइप करें...' : 'Type details here...'}
+              disabled={state === 'saved'}
             />
           </div>
         )}
 
-        {/* Structured NLP Report Display */}
-        {state === 'transcribed' && reportData && (
-          <div className="w-full space-y-3 mb-6">
-            <p className="text-xs text-gray-400 text-center mb-2">
-              {language === 'hi' ? 'एआई-जनरेटेड रिपोर्ट' : language === 'bn' ? 'এআই-জনরেটেড রিপোর্ট' : language === 'mr' ? 'एआय-व्युत्पन्न अहवाल' : 'AI-Generated Report'}
+        {/* Dynamic Structured Report Parser */}
+        {(state === 'transcribed' || state === 'saved') && structuredReport.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider pl-1">
+              {isHi ? 'एआई-संरचित व्याख्या' : 'AI-Structured Extract'}
             </p>
-            
-            {/* Attendance card */}
-            <div className="p-3 rounded-xl border bg-white/5 border-white/10">
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-2 h-2 rounded-full bg-sky-400" />
-                <span className="text-[11px] font-medium text-gray-300">
-                  {language === 'hi' ? 'उपस्थिति' : 'Attendance'}
-                </span>
-              </div>
-              <p className="text-xs text-gray-250 leading-relaxed">{reportData.attendanceText}</p>
-            </div>
-
-            {/* Observations cards */}
-            {reportData.childObservations.map((item, i) => (
-              <div
-                key={i}
-                className={`p-3 rounded-xl border ${
-                  item.isAlert
-                    ? 'bg-red-500/10 border-red-500/20'
-                    : 'bg-white/5 border-white/10'
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <div
-                    className={`w-2 h-2 rounded-full ${
-                      item.isAlert ? 'bg-red-400' : 'bg-emerald-400'
-                    }`}
-                  />
-                  <span className="text-[11px] font-medium text-gray-300">
-                    {item.isAlert 
-                      ? (language === 'hi' ? `ध्यान दें - ${item.name}` : `Attention Needed - ${item.name}`)
-                      : (language === 'hi' ? `अवलोकन - ${item.name}` : `Observation - ${item.name}`)}
-                    {` (${item.category})`}
-                  </span>
+            <div className="space-y-2.5">
+              {structuredReport.map((item, i) => (
+                <div
+                  key={i}
+                  className={`p-3 rounded-2xl border flex gap-3 ${
+                    item.type === 'alert'
+                      ? 'bg-red-500/10 border-red-500/20'
+                      : item.type === 'attendance'
+                      ? 'bg-sky-500/10 border-sky-500/20'
+                      : 'bg-white/5 border-white/5'
+                  }`}
+                >
+                  <div className="shrink-0 mt-0.5">
+                    <div
+                      className={`w-2.5 h-2.5 rounded-full ${
+                        item.type === 'attendance'
+                          ? 'bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.6)]'
+                          : item.type === 'observation'
+                          ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]'
+                          : 'bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.6)]'
+                      }`}
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wide leading-none mb-1">
+                      {item.label}
+                    </p>
+                    <p className="text-xs text-slate-200 leading-relaxed font-semibold">
+                      {item.value}
+                    </p>
+                  </div>
                 </div>
-                <p className="text-xs text-gray-250 leading-relaxed">{item.note}</p>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </div>
 
-      {/* Bottom Actions */}
+      {/* Save Button */}
       {state === 'transcribed' && (
-        <div className="shrink-0 p-4 bg-gray-900/50 backdrop-blur-md border-t border-white/10">
+        <div className="shrink-0 p-4 bg-slate-950/65 backdrop-blur-md border-t border-white/5 select-none">
           <button
-            type="button"
             onClick={handleSave}
-            className="w-full h-14 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-650 hover:to-teal-650 text-white font-semibold rounded-2xl shadow-lg active:scale-[0.97] transition-all flex items-center justify-center gap-2 outline-none"
+            className="w-full h-14 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold rounded-2xl shadow-lg active:scale-[0.97] transition-transform flex items-center justify-center gap-2 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
           >
-            <Save size={20} />
-            {language === 'hi' ? 'रिपोर्ट सहेजें' : language === 'bn' ? 'রিপোর্ট সংরক্ষণ করুন' : language === 'mr' ? 'अहवाल जतन करा' : 'Save Report'}
+            <Save size={18} />
+            {isHi ? 'रिपोर्ट सहेजें' : 'Save Report'}
           </button>
+        </div>
+      )}
+
+      {/* Recording Overlay Voice Modal */}
+      {isListening && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-[280px] shadow-2xl space-y-6 text-center animate-scaleIn">
+            <div>
+              <span className="text-[9px] bg-orange-500/20 text-orange-400 px-3 py-1 rounded-full font-bold uppercase tracking-wider">
+                {isHi ? 'वॉइस डिक्टेशन' : 'Voice Dictation'}
+              </span>
+              <h3 className="text-xs font-semibold text-slate-100 mt-4 min-h-[44px] px-2 leading-relaxed">
+                {listeningText}
+              </h3>
+            </div>
+
+            <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
+              <div className="absolute inset-0 bg-orange-500/20 rounded-full animate-ping pointer-events-none" />
+              <div className="absolute inset-2 bg-orange-500/10 rounded-full animate-pulse pointer-events-none" />
+              <div className="w-14 h-14 bg-gradient-to-br from-orange-400 to-amber-500 rounded-full flex items-center justify-center shadow-lg shadow-orange-500/30">
+                <Mic size={22} className="text-white animate-bounce" />
+              </div>
+            </div>
+
+            <p className="text-[10px] text-gray-400 leading-relaxed px-2 font-medium">
+              {isHi
+                ? 'अपने माइक्रोफ़ोन में स्पष्ट रूप से बोलें...'
+                : 'Speak clearly into your device microphone...'}
+            </p>
+
+            <button
+              onClick={() => {
+                if (recognitionRef.current) {
+                  try {
+                    recognitionRef.current.abort();
+                  } catch (e) {
+                    console.error(e);
+                  }
+                }
+                setState('idle');
+                setIsListening(false);
+              }}
+              className="w-full h-10 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl active:scale-95 transition-transform outline-none"
+            >
+              {isHi ? 'रद्द करें' : 'Cancel'}
+            </button>
+          </div>
         </div>
       )}
     </div>

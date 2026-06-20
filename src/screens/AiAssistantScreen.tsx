@@ -1,444 +1,722 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { ArrowLeft, Send, Mic, Bot, User, Wifi, Square } from 'lucide-react';
-import { useLanguage } from '../context/LanguageContext';
-import type { ChatMessage } from '../data/mockData';
+import { useState, useRef, useEffect } from 'react';
+import { ArrowLeft, Send, Mic, Bot, User, Wifi, CloudOff, Copy, Check, Trash2 } from 'lucide-react';
+import { children as defaultChildren, homeVisits as defaultHomeVisits, activities } from '../data/mockData';
+import { chatApi } from '../lib/api';
+
+interface Child {
+  id: string;
+  name: string;
+  nameHindi: string;
+  age: number;
+  ageDisplay: string;
+  gender: 'boy' | 'girl';
+  avatar: string;
+  attendance: 'present' | 'absent' | 'irregular';
+  nutritionStatus: 'good' | 'at-risk' | 'monitoring';
+  developmentProgress: number;
+  lastVisit: string;
+  parentName: string;
+  parentPhone: string;
+  address: string;
+  observations: { id: string; date: string; note: string; category: string; type: string }[];
+  milestones: { id: string; title: string; date: string; category: string; completed: boolean }[];
+  aiInsights: string[];
+  needsAttention: boolean;
+  attendanceHistory: boolean[];
+}
+
+interface HomeVisit {
+  id: string;
+  childName: string;
+  parentName: string;
+  concern: string;
+  lastVisit: string;
+  suggestedTopics: string[];
+  status: 'pending' | 'completed';
+}
+
+interface ChatMessage {
+  id: string;
+  sender: 'user' | 'ai';
+  message: string;
+  timestamp: string;
+}
 
 interface AiAssistantScreenProps {
   onBack: () => void;
-  childrenList?: any[];
+  isOffline?: boolean;
+  language?: string;
+  onAddObservation?: (childId: string, note: string, category: string) => void;
+  childrenList?: Child[];
+  visitsList?: HomeVisit[];
 }
 
-// ─── Extended NLU Knowledge Base ────────────────────────────────────────────
-const knowledgeBase: { patterns: RegExp[]; handler: (ctx: any) => string }[] = [
-  {
-    patterns: [/miss|absent|attendance|didn.t come|nahi aaya|gaayab/i],
-    handler: (ctx) => {
-      const absent = ctx.children.filter((c: any) => c.attendance === 'absent' || c.attendance === 'irregular');
-      if (absent.length === 0) return '✅ Great news! All children have good attendance this week.';
-      const list = absent.map((c: any, i: number) => `${i + 1}. **${c.name}** — ${c.attendance} (${c.ageDisplay})`).join('\n');
-      return `📋 **${absent.length} children need attendance attention:**\n\n${list}\n\nWould you like me to schedule home visits for them?`;
-    },
-  },
-  {
-    patterns: [/shy|quiet|introvert|hesitant|shant|chup|dar/i],
-    handler: () =>
-      `🎭 **Activities for shy children:**\n\n1. **Puppet Show** — Children express through puppets, reducing direct social pressure\n2. **Art Corner** — Individual creativity builds self-confidence\n3. **Paired Story Reading** — 1-on-1 with a trusted peer, then gradually group\n4. **Role Play Games** — Safe environment to practice social interactions\n\n💡 *Tip: Pair shy children with a confident, kind peer for 15 mins/day.*`,
-  },
-  {
-    patterns: [/home visit|ghar jana|visit kab|ghar milna/i],
-    handler: (ctx) => {
-      const needVisit = ctx.children.filter((c: any) => c.attendance === 'irregular' || c.attendance === 'absent' || c.needsAttention);
-      if (needVisit.length === 0) return '🏠 No urgent home visits needed at this time. All children are doing well!';
-      const list = needVisit.map((c: any, i: number) => `${i + 1}. **${c.name}** — ${c.parentName} (${c.address})`).join('\n');
-      return `🏠 **${needVisit.length} children need home visits:**\n\n${list}\n\nGo to the **Home Visits** tab to log or schedule visits.`;
-    },
-  },
-  {
-    patterns: [/nutrition|malnourish|poshan|khaana|food|weight|risk/i],
-    handler: (ctx) => {
-      const atRisk = ctx.children.filter((c: any) => c.nutritionStatus === 'at-risk');
-      const monitoring = ctx.children.filter((c: any) => c.nutritionStatus === 'monitoring');
-      const good = ctx.children.filter((c: any) => c.nutritionStatus === 'good');
-      return `🥗 **Nutrition Summary:**\n\n✅ Good: ${good.length} children\n⚠️ Monitoring: ${monitoring.length} children\n🔴 At Risk: ${atRisk.length} children${atRisk.length > 0 ? '\n\n**At-risk: ' + atRisk.map((c: any) => c.name).join(', ') + '**\nPlease escalate to health worker immediately.' : ''}\n\n💊 Tip: Conduct weekly weight checks & ensure supplementary nutrition is distributed.`;
-    },
-  },
-  {
-    patterns: [/extra support|help|needs attention|problem|struggle|dhyan|madad/i],
-    handler: (ctx) => {
-      const attention = ctx.children.filter((c: any) => c.needsAttention || c.developmentProgress < 60);
-      if (attention.length === 0) return '🌟 All children are progressing well! Keep up the great work.';
-      const list = attention.map((c: any, i: number) => `${i + 1}. **${c.name}** — Progress: ${c.developmentProgress}%`).join('\n');
-      return `⚠️ **${attention.length} children need extra support:**\n\n${list}\n\n📌 Consider:\n• Individual attention during activities\n• Notify parents for home practice\n• Request ASHA worker support if needed`;
-    },
-  },
-  {
-    patterns: [/milestone|development|progress|vikash|badh|grow/i],
-    handler: (ctx) => {
-      const sorted = [...ctx.children].sort((a: any, b: any) => a.developmentProgress - b.developmentProgress);
-      const low = sorted.slice(0, 3);
-      const list = low.map((c: any, i: number) => `${i + 1}. ${c.name} — ${c.developmentProgress}%`).join('\n');
-      return `📈 **Development Progress Overview:**\n\nClass Average: ${Math.round(ctx.children.reduce((s: number, c: any) => s + c.developmentProgress, 0) / ctx.children.length)}%\n\n**Children needing milestone support:**\n${list}\n\n💡 Focus on language & motor activities for lowest-progress children.`;
-    },
-  },
-  {
-    patterns: [/report|summary|aaj ka|today|daily|din/i],
-    handler: (ctx) => {
-      const present = ctx.children.filter((c: any) => c.attendance === 'present').length;
-      const total = ctx.children.length;
-      const atRisk = ctx.children.filter((c: any) => c.nutritionStatus === 'at-risk').length;
-      const obs = ctx.children.reduce((sum: number, c: any) => sum + (c.observations ? c.observations.length : 0), 0);
-      return `📊 **Today's Daily Summary:**\n\n👥 Attendance: ${present}/${total} children\n🥗 Nutrition At-Risk: ${atRisk}\n📝 Total Observations: ${obs}\n\n🕐 Generated at ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}\n\nGo to **Reports** tab to export this as a PDF.`;
-    },
-  },
-  {
-    patterns: [/activity|suggest|recommend|kya karein|khelna|kya sikhayen/i],
-    handler: (ctx) => {
-      const languageLag = ctx.children.find((c: any) => c.developmentProgress < 70 && c.name === 'Rani');
-      const cogLag = ctx.children.find((c: any) => c.developmentProgress < 75 && c.name === 'Aarav');
-      let recs = `🎯 **AI Activity Recommendations for Today:**\n\n`;
-      if (languageLag) recs += `• **Rhyme Time** — For ${languageLag.name}'s language development\n`;
-      if (cogLag) recs += `• **Color Sorting Game** — For ${cogLag.name}'s cognitive skills\n`;
-      recs += `• **Story Circle** — Great for group listening and expression\n• **Finger Painting** — Boosts fine motor & creativity\n\nGo to the **Activities** tab to schedule these.`;
-      return recs;
-    },
-  },
-  {
-    patterns: [/how many|kitne|total|count|sankhya/i],
-    handler: (ctx) => {
-      const present = ctx.children.filter((c: any) => c.attendance === 'present').length;
-      return `📊 **Quick Count:**\n\n• Total Enrolled: ${ctx.children.length}\n• Present Today: ${present}\n• Absent/Irregular: ${ctx.children.length - present}\n\nAttendance Rate: **${Math.round((present / ctx.children.length) * 100)}%**`;
-    },
-  },
-  {
-    patterns: [/namaste|hello|hi |hii|namaskar|hey|good morning|good evening/i],
-    handler: () =>
-      `🙏 Namaste! I'm Pratibha, your AI assistant.\n\nI can help you with:\n• 📋 Attendance & home visits\n• 🥗 Nutrition monitoring\n• 📈 Development progress\n• 🎯 Activity suggestions\n• 📊 Daily summaries & reports\n\nWhat would you like to know?`,
-  },
-  {
-    patterns: [/thank|shukriya|dhanyawad|thanks/i],
-    handler: () => `🙏 You're welcome, Sunita Ji! You're doing wonderful work for these children. Anything else I can help with?`,
-  },
-];
-
-const DEFAULT_RESPONSE = (q: string) =>
-  `🤔 I understand you're asking about **"${q}"**.\n\nI can help you with:\n• Attendance & home visits\n• Nutrition status\n• Activity recommendations\n• Development milestones\n• Daily summaries\n\nTry asking: *"Who needs home visit?"* or *"Suggest activity for today"*`;
-
-// ─── NLU Engine ──────────────────────────────────────────────────────────────
-function processQuery(text: string, children: any[]): string {
-  const ctx = { children };
-  for (const entry of knowledgeBase) {
-    if (entry.patterns.some((p) => p.test(text))) {
-      return entry.handler(ctx);
-    }
+const getSuggestedPrompts = (lang: string) => {
+  if (lang === 'hi') {
+    return [
+      'इस सप्ताह किस बच्चे की उपस्थिति कम रही?',
+      'शर्मीले बच्चों के लिए गतिविधि बताएं',
+      'किसे गृह दौरे की आवश्यकता है?',
+      'पोषण स्तर का सारांश दिखाएं',
+      'किन बच्चों को अतिरिक्त सहायता चाहिए?'
+    ];
   }
-  return DEFAULT_RESPONSE(text);
-}
-
-// ─── RAG Context Compiler ───────────────────────────────────────────────────
-function getRagContext(children: any[]): string {
-  const list = children.map(c => {
-    const lastObs = c.observations && c.observations.length > 0 
-      ? c.observations.map((o: any) => `[Category: ${o.category}]: ${o.note}`).join('; ')
-      : 'No observations logged yet';
-    return `- Name: ${c.name} (${c.gender === 'girl' ? 'Girl' : 'Boy'}, Age: ${c.ageDisplay}), Attendance Status: ${c.attendance}, Nutrition Status: ${c.nutritionStatus}, Development Progress: ${c.developmentProgress}%, Recent Logs: ${lastObs}`;
-  }).join('\n');
-  return `Anganwadi Center Children Registry Context:\n${list}`;
-}
-
-// ─── Local Storage History ────────────────────────────────────────────────────
-const HISTORY_KEY = 'pratibha_chat_history';
-
-function loadHistory(): ChatMessage[] {
-  try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    if (raw) return JSON.parse(raw).slice(-30); // keep last 30 msgs
-  } catch {}
-  return [];
-}
-
-function saveHistory(msgs: ChatMessage[]) {
-  try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(msgs.slice(-30)));
-  } catch {}
-}
-
-// Helper to render markdown bold tags as strong React elements
-function renderFormattedMessage(text: string, isUser: boolean) {
-  if (!text) return null;
-  const parts = text.split(/\*\*([^*]+)\*\*/g);
-  return parts.map((part, index) => {
-    if (index % 2 === 1) {
-      return (
-        <strong key={index} className={isUser ? "font-bold text-white" : "font-bold text-gray-950 dark:text-white"}>
-          {part}
-        </strong>
-      );
-    }
-    return part;
-  });
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
-export function AiAssistantScreen({ onBack, childrenList = [] }: AiAssistantScreenProps) {
-  const { language } = useLanguage();
-
-  const welcomeMsg: ChatMessage = {
-    id: 'welcome',
-    sender: 'ai',
-    message: language === 'hi'
-      ? '🙏 नमस्ते सुनीता जी! मैं प्रतिभा हूँ, आपकी एआई सहायक। आज मैं आपकी कैसे मदद कर सकती हूँ?'
-      : language === 'bn'
-      ? '🙏 নমস্কার সুনিতা জি! আমি প্রতিভা, আপনার এআই সহায়ক। আজ আমি আপনাকে কীভাবে সাহায্য করতে পারি?'
-      : language === 'mr'
-      ? '🙏 नमस्कार सुनिता जी! मी प्रतिभा आहे, तुमची एआय सहाय्यक. आज मी तुम्हाला कशी मदत करू शकते?'
-      : '🙏 Namaste Sunita Ji! I am Pratibha, your AI assistant. How can I help you today?',
-    timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-  };
-
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    const history = loadHistory();
-    return history.length > 0 ? history : [welcomeMsg];
-  });
-  const [input, setInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const [isMicActive, setIsMicActive] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
-
-  const suggestedPrompts = language === 'hi' ? [
-    'इस हफ्ते किसने अनुपस्थिति ली?',
-    'शर्मीले बच्चों के लिए गतिविधि सुझाएं',
-    'किसे घर भेंट की जरूरत है?',
-    'पोषण सारांश बनाएं',
-    'आज का सारांश दिखाएं',
-  ] : language === 'bn' ? [
-    'এই সপ্তাহে কে অনুপস্থিত ছিল?',
-    'লাজুক শিশুদের জন্য কার্যক্রম পরামর্শ',
-    'কার গৃহ পরিদর্শন দরকার?',
-    'পুষ্টি সারসংক্ষেপ তৈরি করুন',
-    'আজকের সারসংক্ষেপ দেখান',
-  ] : [
+  return [
     'Which children missed attendance this week?',
     'Suggest activity for shy children',
     'Who needs home visit?',
     'Generate nutrition summary',
-    'Show today\'s daily summary',
+    'Show children needing extra support',
   ];
+};
 
+// Generate dynamic AI responses based on actual mock database state
+const generateAiResponse = (
+  query: string,
+  lang: string,
+  childrenList: Child[] = [],
+  visitsList: HomeVisit[] = []
+): string => {
+  const text = query.toLowerCase().trim();
+  const isHi = lang === 'hi';
+
+  // 1. Individual Child Profile Lookup
+  const matchedChild = childrenList.find(c => {
+    const nameEn = c.name.toLowerCase();
+    const nameHi = c.nameHindi ? c.nameHindi.toLowerCase() : '';
+    return text.includes(nameEn) || (nameHi && text.includes(nameHi));
+  });
+
+  if (matchedChild) {
+    const name = isHi ? matchedChild.nameHindi : matchedChild.name;
+    const parent = matchedChild.parentName;
+    const age = matchedChild.ageDisplay;
+    const nutrition = matchedChild.nutritionStatus;
+    const attendance = matchedChild.attendance;
+    const progress = matchedChild.developmentProgress;
+    const lastVisit = matchedChild.lastVisit;
+
+    const nutritionText = nutrition === 'good' 
+      ? (isHi ? 'अच्छी (Good)' : 'Good') 
+      : nutrition === 'at-risk' 
+      ? (isHi ? 'जोखिम में (At-Risk)' : 'At-Risk') 
+      : (isHi ? 'निगरानी में (Monitoring)' : 'Monitoring');
+
+    const attendanceText = attendance === 'present' 
+      ? (isHi ? 'उपस्थित (Present)' : 'Present') 
+      : attendance === 'irregular' 
+      ? (isHi ? 'अनियमित (Irregular)' : 'Irregular') 
+      : (isHi ? 'अनुपस्थित (Absent)' : 'Absent');
+
+    const insights = matchedChild.aiInsights.map((ins: string) => `- ${ins}`).join('\n');
+
+    if (isHi) {
+      return `यहाँ **${name}** का प्रोफ़ाइल विवरण है:\n\n` +
+             `- **उम्र**: ${age}\n` +
+             `- **अभिभावक**: ${parent} (फ़ोन: ${matchedChild.parentPhone})\n` +
+             `- **उपस्थिति**: ${attendanceText}\n` +
+             `- **पोषण स्तर**: ${nutritionText}\n` +
+             `- **विकास प्रगति**: ${progress}%\n` +
+             `- **अंतिम गृह दौरा**: ${lastVisit}\n\n` +
+             `**एआई अंतर्दृष्टि (Insights):**\n${insights}\n\n` +
+             `क्या आप ${name} के लिए गृह दौरा निर्धारित करना चाहते हैं या कोई टिप्पणी जोड़ना चाहते हैं?`;
+    } else {
+      return `Here is the profile summary for **${name}**:\n\n` +
+             `- **Age**: ${age}\n` +
+             `- **Parent**: ${parent} (Phone: ${matchedChild.parentPhone})\n` +
+             `- **Attendance**: ${attendanceText}\n` +
+             `- **Nutrition**: ${nutritionText}\n` +
+             `- **Development Progress**: ${progress}%\n` +
+             `- **Last Home Visit**: ${lastVisit}\n\n` +
+             `**AI Insights:**\n${insights}\n\n` +
+             `Would you like to schedule a home visit or log a new observation for ${name}?`;
+    }
+  }
+
+  // 2. Attendance / Absentees Query
+  if (text.includes('attendance') || text.includes('absent') || text.includes('irregular') || text.includes('missed') || text.includes('gairhazir') || text.includes('anupasthit') || text.includes('upasthiti') || text.includes('कम उपस्थिति')) {
+    const irregular = childrenList.filter(c => c.attendance === 'irregular' || c.attendance === 'absent');
+    if (irregular.length === 0) {
+      return isHi 
+        ? 'सभी बच्चे आज उपस्थित हैं! हाल ही में कोई अनुपस्थिति दर्ज नहीं की गई है।' 
+        : 'All children are present today! No recent absences recorded.';
+    }
+
+    const list = irregular.map((c, idx) => {
+      const name = isHi ? c.nameHindi : c.name;
+      const status = c.attendance === 'irregular' 
+        ? (isHi ? 'अनियमित' : 'Irregular') 
+        : (isHi ? 'अनुपस्थित' : 'Absent');
+      return `${idx + 1}. **${name}** (${status} - अभिभावक: ${c.parentName})`;
+    }).join('\n');
+
+    if (isHi) {
+      return `इस सप्ताह निम्नलिखित बच्चों की उपस्थिति अनियमित या कम रही है:\n\n${list}\n\nक्या आप इनमें से किसी बच्चे के लिए गृह दौरा (Home Visit) की योजना बनाना चाहेंगे?`;
+    } else {
+      return `Here are the children with irregular or missed attendance this week:\n\n${list}\n\nWould you like me to help you schedule home visits for them?`;
+    }
+  }
+
+  // 3. Activities / Shy Children Query
+  if (text.includes('activity') || text.includes('activities') || text.includes('shy') || text.includes('sharmile') || text.includes('sharmila') || text.includes('gatividhi') || text.includes('khel') || text.includes('गतिविधि')) {
+    const recommended = activities.filter(a => a.aiRecommended);
+    const list = recommended.map((a, idx) => {
+      const title = isHi ? a.titleHindi : a.title;
+      return `${idx + 1}. **${title}** (${a.duration} &middot; ${a.category} &middot; ${a.ageGroup})\n   - *${isHi ? 'सीखने का परिणाम' : 'Outcome'}:* ${a.learningOutcome}`;
+    }).join('\n');
+
+    if (isHi) {
+      return `शर्मीले या संकोची बच्चों के लिए, मैं इन गतिविधियों की सलाह देती हूँ:\n\n${list}\n\nइन छोटी समूह गतिविधियों से बच्चों में आत्मविश्वास बढ़ेगा। क्या आप इनमें से कोई गतिविधि शुरू करना चाहते हैं?`;
+    } else {
+      return `For shy or quiet children, I highly recommend starting with these activities:\n\n${list}\n\nThese low-pressure and creative play activities help build peer confidence. Would you like to start one?`;
+    }
+  }
+
+  // 4. Home Visits Query
+  if (text.includes('home visit') || text.includes('visit') || text.includes('ghar') || text.includes('daura') || text.includes('milne') || text.includes('ghar par') || text.includes('दौरा')) {
+    const pendingVisits = visitsList.filter(v => v.status === 'pending');
+    if (pendingVisits.length === 0) {
+      return isHi 
+        ? 'आपके पास कोई लंबित गृह दौरा नहीं है! सभी दौरे पूरे हो चुके हैं।' 
+        : 'You have no pending home visits! All visits are completed.';
+    }
+
+    const list = pendingVisits.map((v, idx) => {
+      const childName = v.childName;
+      const match = childrenList.find(c => c.name === childName);
+      const displayName = isHi && match ? match.nameHindi : childName;
+      return `${idx + 1}. **${displayName}**\n   - *अभिभावक (Parent):* ${v.parentName}\n   - *कारण (Concern):* ${v.concern}\n   - *अंतिम दौरा (Last visit):* ${v.lastVisit}`;
+    }).join('\n');
+
+    if (isHi) {
+      return `यहाँ आपके लंबित गृह दौरों की सूची है:\n\n${list}\n\nगृह दौरे पर जाने से पहले आप मुझसे चर्चा के विषय (Discussion Points) पूछ सकते हैं।`;
+    } else {
+      return `Here are your pending home visits:\n\n${list}\n\nWould you like guidance on what topics to discuss during these visits?`;
+    }
+  }
+
+  // 5. Nutrition / At-Risk Query
+  if (text.includes('nutrition') || text.includes('poshan') || text.includes('at-risk') || text.includes('risk') || text.includes('health') || text.includes('malnourished') || text.includes('weight') || text.includes('पोषण') || text.includes('स्वास्थ्य')) {
+    const good = childrenList.filter(c => c.nutritionStatus === 'good').length;
+    const monitoring = childrenList.filter(c => c.nutritionStatus === 'monitoring');
+    const atRisk = childrenList.filter(c => c.nutritionStatus === 'at-risk');
+
+    const atRiskList = atRisk.map(c => isHi ? c.nameHindi : c.name).join(', ') || (isHi ? 'कोई नहीं' : 'None');
+    const monitoringList = monitoring.map(c => isHi ? c.nameHindi : c.name).join(', ') || (isHi ? 'कोई नहीं' : 'None');
+
+    if (isHi) {
+      return `साप्ताहिक पोषण सारांश:\n\n` +
+             `- **अच्छी स्थिति (Good)**: ${good} बच्चे\n` +
+             `- **निगरानी स्तर (Monitoring)**: ${monitoring.length} (${monitoringList})\n` +
+             `- **जोखिम में (At Risk)**: ${atRisk.length} (${atRiskList})\n\n` +
+             `*अनुशंसा:* जोखिम वाले बच्चों के परिवारों के साथ पूरक आहार और स्थानीय पोषण सामग्री पर चर्चा के लिए गृह दौरा करें।`;
+    } else {
+      return `Weekly Nutrition Summary:\n\n` +
+             `- **Good Status**: ${good} children\n` +
+             `- **Monitoring Status**: ${monitoring.length} (${monitoringList})\n` +
+             `- **At-Risk Status**: ${atRisk.length} (${atRiskList})\n\n` +
+             `*Recommendation:* Schedule home visits with the families of at-risk children to discuss micro-nutrients and local high-protein diets.`;
+    }
+  }
+
+  // 6. Extra Support / Attention Query
+  if (text.includes('support') || text.includes('extra') || text.includes('attention') || text.includes('help') || text.includes('madad') || text.includes('kamzor') || text.includes('sahyog') || text.includes('अतिरिक्त सहायता')) {
+    const attention = childrenList.filter(c => c.needsAttention);
+    const list = attention.map((c, idx) => {
+      const name = isHi ? c.nameHindi : c.name;
+      return `${idx + 1}. **${name}** (उम्र: ${c.ageDisplay})\n   - *स्थिति:* ${c.attendance === 'irregular' ? (isHi ? 'अनियमित उपस्थिति' : 'Irregular Attendance') : ''}${c.nutritionStatus === 'at-risk' ? (isHi ? ' + पोषण जोखिम' : ' + Nutrition At-Risk') : ''}`;
+    }).join('\n');
+
+    if (isHi) {
+      return `इन बच्चों को अतिरिक्त सहायता और ध्यान की आवश्यकता है:\n\n${list}\n\nइन बच्चों के सीखने के स्तर और स्वास्थ्य पर विशेष ध्यान दें। क्या आप इनमें से किसी के लिए रिपोर्ट देखना चाहते हैं?`;
+    } else {
+      return `The following children need extra attention or support:\n\n${list}\n\nI recommend prioritizing home visits and custom learning plans for them. How else can I help?`;
+    }
+  }
+
+  // 7. General Fallback Response
+  if (isHi) {
+    return `नमस्ते! मैं आपका एआई मेंटर (AI Mentor) हूँ। मैं आपकी निम्नलिखित जानकारी में मदद कर सकती हूँ:\n\n` +
+           `- **उपस्थिति** (जैसे: 'कौन अनुपस्थित है?')\n` +
+           `- **गतिविधियाँ** (जैसे: 'शर्मीले बच्चों के लिए खेल')\n` +
+           `- **गृह दौरा** (जैसे: 'किसे गृह दौरे की आवश्यकता है?')\n` +
+           `- **पोषण स्तर** (जैसे: 'पोषण रिपोर्ट सारांश')\n` +
+           `- **बच्चे की जानकारी** (जैसे: 'रानी की प्रोफाइल' या 'रोहन के बारे में बताएं')\n\n` +
+           `कृपया इनमें से कोई भी प्रश्न पूछें!`;
+  } else {
+    return `Hello! I am your AI Mentor. I can dynamically assist you with details from your Anganwadi center:\n\n` +
+           `- **Attendance Reports** (e.g., 'Who missed attendance this week?')\n` +
+           `- **Activity Recommendations** (e.g., 'Suggest activity for shy children')\n` +
+           `- **Home Visit Schedules** (e.g., 'Who needs a home visit?')\n` +
+           `- **Nutrition Summaries** (e.g., 'Generate nutrition summary')\n` +
+           `- **Individual Child Profiles** (e.g., 'Tell me about Rani' or 'Profile of Rohan')\n\n` +
+           `How can I assist you today?`;
+  }
+};
+
+const getFormattedTime = () => {
+  const now = new Date();
+  return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const generateMessageId = () => {
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+};
+
+export function AiAssistantScreen({
+  onBack,
+  isOffline = false,
+  language = 'en',
+  onAddObservation,
+  childrenList = defaultChildren,
+  visitsList = defaultHomeVisits
+}: AiAssistantScreenProps) {
+  // Load chat messages from localStorage or initialize with welcome message
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const saved = localStorage.getItem('pratibha_ai_chat_history');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Error reading chat history", e);
+      }
+    }
+    return [
+      {
+        id: 'welcome',
+        sender: 'ai',
+        message: language === 'hi' 
+          ? 'नमस्ते सुनीता जी! मैं प्रतिभा, आपकी एआई सहायक हूँ। आज मैं आपकी क्या मदद कर सकती हूँ?'
+          : 'Namaste Sunita Ji! I am Pratibha, your AI assistant. How can I help you today?',
+        timestamp: getFormattedTime(),
+      },
+    ];
+  });
+
+  // Load chat messages from API on mount
+  useEffect(() => {
+    if (isOffline) return;
+    chatApi.getHistory()
+      .then((history) => {
+        if (history && history.length > 0) {
+          // Format backend ISO timestamps to local time format if needed
+          const formattedHistory = history.map(msg => ({
+            ...msg,
+            timestamp: msg.timestamp.includes('T')
+              ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : msg.timestamp
+          }));
+          setMessages(formattedHistory);
+        }
+      })
+      .catch((err) => console.error("Error loading chat history from server:", err));
+  }, [isOffline]);
+
+  const [input, setInput] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+
+  // Speech Recognition States
+  const [isListening, setIsListening] = useState(false);
+  const [listeningText, setListeningText] = useState('Listening...');
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const aiTimeoutRef = useRef<any>(null);
+  const speechSimTimeout1Ref = useRef<any>(null);
+  const speechSimTimeout2Ref = useRef<any>(null);
+  const recognitionRef = useRef<any>(null);
+
+  // Auto Scroll
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim()) return;
+  // Persist messages to localStorage for offline fallback
+  useEffect(() => {
+    localStorage.setItem('pratibha_ai_chat_history', JSON.stringify(messages));
+  }, [messages]);
 
-    const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  // Auto-grow textarea height
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 80)}px`;
+    }
+  }, [input]);
+
+  // Component Unmount Cleanup to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
+      if (speechSimTimeout1Ref.current) clearTimeout(speechSimTimeout1Ref.current);
+      if (speechSimTimeout2Ref.current) clearTimeout(speechSimTimeout2Ref.current);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    };
+  }, []);
+
+  const sendMessage = async (text: string) => {
+    const cleaned = text.trim();
+    // Safety check to prevent sending empty messages
+    if (!cleaned || cleaned.replace(/\s/g, '').length === 0 || isTyping) return;
+
+    const tempUserMsgId = generateMessageId();
     const userMsg: ChatMessage = {
-      id: Date.now().toString(),
+      id: tempUserMsgId,
       sender: 'user',
-      message: text,
-      timestamp: now,
+      message: cleaned,
+      timestamp: getFormattedTime(),
     };
 
-    setMessages((prev) => {
-      const updated = [...prev, userMsg];
-      saveHistory(updated);
-      return updated;
-    });
+    setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setIsTyping(true);
 
-    const apiMode = localStorage.getItem('pratibha_api_mode') || 'gemini';
-    const apiKey = localStorage.getItem('pratibha_gemini_key') || '';
+    // Simulated local response generation logic (used for offline or fallback)
+    const runOfflineSimulation = () => {
+      if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
+      aiTimeoutRef.current = setTimeout(() => {
+        let response = '';
+        const lowerText = cleaned.toLowerCase();
+        let observationLogged = false;
+        let loggedMessage = '';
 
-    const aiMsgId = (Date.now() + 1).toString();
-    const aiPlaceholderMsg: ChatMessage = {
-      id: aiMsgId,
-      sender: 'ai',
-      message: '',
-      timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-    };
+        // Check if user is requesting to log an observation note
+        const isLogQuery = 
+          lowerText.includes('log') || 
+          lowerText.includes('record') || 
+          lowerText.includes('add') || 
+          lowerText.includes('observation') || 
+          lowerText.includes('tippani') || 
+          lowerText.includes('टिप्पणी') || 
+          lowerText.includes('लिखो') || 
+          lowerText.includes('जोड़ें') ||
+          lowerText.includes('दर्ज');
 
-    if (apiMode === 'gemini' && apiKey.trim()) {
-      // 1. Real Streaming Gemini API call using RAG context
-      try {
-        setMessages((prev) => [...prev, aiPlaceholderMsg]);
-        
-        const ragContext = getRagContext(childrenList);
-        const systemInstruction = `You are Pratibha, a supportive, respectful AI mentor/assistant for an Anganwadi early education worker in India named Sunita Ji.
-Here is the current real-time database snapshot of children in the Anganwadi center (RAG context):
-${ragContext}
-
-Answer the user's questions accurately based on this database context.
-Format your responses using clean Markdown bullets and bold text. Keep replies concise and easy to read.
-
-CRITICAL LANGUAGE RULE:
-1. You MUST respond in the EXACT same language and script/dialect that the user queried in:
-   - If the user query is in English (e.g., "Which children missed attendance?"), reply ONLY in English. Do not write Hindi.
-   - If the user query is in Hindi using Devanagari script (e.g., "कौन अनुपस्थित है?"), reply ONLY in Hindi (Devanagari script).
-   - If the user query is in Hinglish using Latin script (e.g., "kaun absent hai?"), reply ONLY in Hinglish using Latin script.
-   - If the user query is in Bengali, reply ONLY in Bengali.
-   - If the user query is in Marathi, reply ONLY in Marathi.
-2. NEVER mix languages (e.g., do not reply in Hindi to an English question, and do not use Devanagari Hindi inside an English reply).
-3. Do not wrap your response in outer quote characters.`;
-
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=${apiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [
-                { role: 'user', parts: [{ text: systemInstruction + "\n\nUser Question: " + text }] }
-              ]
-            })
-          }
-        );
-
-        if (!response.ok) throw new Error('API connection failure');
-
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let accumulatedText = '';
-        setIsTyping(false);
-
-        if (reader) {
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            const chunk = decoder.decode(value, { stream: true });
-            
-            // Extract text matching "text" field in chunks
-            const matches = chunk.match(/"text"\s*:\s*"([^"]+)"/g);
-            if (matches) {
-              matches.forEach(m => {
-                const startIndex = m.indexOf('"') + 8;
-                const txt = m.slice(startIndex, -1);
-                const cleanText = txt
-                  .replace(/\\n/g, '\n')
-                  .replace(/\\"/g, '"')
-                  .replace(/\\t/g, '\t')
-                  .replace(/\\\\/g, '\\');
-
-                accumulatedText += cleanText;
-                setMessages((prev) => 
-                  prev.map(msg => 
-                    msg.id === aiMsgId ? { ...msg, message: accumulatedText } : msg
-                  )
-                );
-              });
-            }
-          }
-          setMessages((prev) => {
-            saveHistory(prev);
-            return prev;
+        if (isLogQuery && onAddObservation && childrenList) {
+          const matched = childrenList.find(c => {
+            const nameEn = c.name.toLowerCase();
+            const nameHi = c.nameHindi ? c.nameHindi.toLowerCase() : '';
+            return lowerText.includes(nameEn) || (nameHi && lowerText.includes(nameHi));
           });
-        }
-      } catch (err) {
-        console.error("Gemini stream error", err);
-        setMessages((prev) => 
-          prev.map(msg => 
-            msg.id === aiMsgId 
-              ? { ...msg, message: "⚠️ Gemini API Error. Please verify your internet connection or check your Developer API Key in settings." } 
-              : msg
-          )
-        );
-        setIsTyping(false);
-      }
-    } else {
-      // 2. Typewriter Streaming NLU Simulator fallback (offline mode)
-      const responseText = processQuery(text, childrenList);
-      
-      // Delay NLU start slightly to simulate processing
-      const delay = 450 + Math.random() * 450;
-      setTimeout(() => {
-        setMessages((prev) => [...prev, aiPlaceholderMsg]);
-        setIsTyping(false);
 
-        let currentIdx = 0;
-        const words = responseText.split(' ');
-        const interval = setInterval(() => {
-          if (currentIdx >= words.length) {
-            clearInterval(interval);
-            setMessages((prev) => {
-              saveHistory(prev);
-              return prev;
-            });
-            return;
+          if (matched) {
+            let note = '';
+            if (cleaned.includes(':')) {
+              note = cleaned.split(':').slice(1).join(':').trim();
+            } else {
+              const nameIndexEn = lowerText.indexOf(matched.name.toLowerCase());
+              const nameIndexHi = matched.nameHindi ? lowerText.indexOf(matched.nameHindi.toLowerCase()) : -1;
+              let index = -1;
+              let len = 0;
+              if (nameIndexEn !== -1) {
+                index = nameIndexEn;
+                len = matched.name.length;
+              } else if (nameIndexHi !== -1) {
+                index = nameIndexHi;
+                len = matched.nameHindi.length;
+              }
+              if (index !== -1) {
+                note = cleaned.substring(index + len)
+                  .replace(/^(for|of|ki|ki\stippani|ki\sobservation|के\sलिए|की\sटिप्पणी|के\sबारे\sमें|:|\s)+/gi, '')
+                  .trim();
+              }
+            }
+
+            if (note.length < 3) {
+              note = language === 'hi' 
+                ? `दैनिक गतिविधि में अच्छा प्रदर्शन` 
+                : `Good performance in daily activities.`;
+            }
+
+            let category = 'social';
+            if (lowerText.includes('read') || lowerText.includes('math') || lowerText.includes('count') || lowerText.includes('learn') || lowerText.includes('padhne') || lowerText.includes('painting') || lowerText.includes('drawing')) {
+              category = 'learning';
+            } else if (lowerText.includes('health') || lowerText.includes('food') || lowerText.includes('eat') || lowerText.includes('nutrition') || lowerText.includes('sehat') || lowerText.includes('khana')) {
+              category = 'health';
+            }
+
+            onAddObservation(matched.id, note, category);
+            observationLogged = true;
+            
+            const childName = language === 'hi' && matched.nameHindi ? matched.nameHindi : matched.name;
+            loggedMessage = language === 'hi'
+              ? `मैंने **${childName}** के लिए टिप्पणी दर्ज कर ली है:\n\n*"${note}"*\n\nयह टिप्पणी उनके प्रोफ़ाइल में सहेज ली गई है और डैशबोर्ड पर सिंक हो गई है।`
+              : `I have successfully logged the observation for **${childName}**:\n\n*"${note}"*\n\nThis note has been added to their profile and synced with the dashboard.`;
           }
-          const currentText = words.slice(0, currentIdx + 1).join(' ');
-          setMessages((prev) => 
-            prev.map(msg => 
-              msg.id === aiMsgId ? { ...msg, message: currentText } : msg
-            )
-          );
-          currentIdx++;
-        }, 55); // Streams 55ms per word
-      }, delay);
-    }
-  }, [childrenList]);
+        }
 
-  // Mic voice input using SpeechRecognition
-  const toggleMic = () => {
-    const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!Recognition) {
-      alert('Voice input is not supported on this browser. Please try Chrome.');
+        if (observationLogged) {
+          response = loggedMessage;
+        } else {
+          response = generateAiResponse(cleaned, language, childrenList, visitsList);
+        }
+
+        const aiMsg: ChatMessage = {
+          id: generateMessageId(),
+          sender: 'ai',
+          message: response,
+          timestamp: getFormattedTime(),
+        };
+        setMessages((prev) => [...prev, aiMsg]);
+        setIsTyping(false);
+      }, 1500);
+    };
+
+    if (isOffline) {
+      runOfflineSimulation();
+    } else {
+      try {
+        const res = await chatApi.sendMessage(cleaned);
+
+        // Run local observation parsing for immediate child list UI updates
+        const lowerText = cleaned.toLowerCase();
+        const isLogQuery = 
+          lowerText.includes('log') || 
+          lowerText.includes('record') || 
+          lowerText.includes('add') || 
+          lowerText.includes('observation') || 
+          lowerText.includes('tippani') || 
+          lowerText.includes('टिप्पणी') || 
+          lowerText.includes('लिखो') || 
+          lowerText.includes('जोड़ें') ||
+          lowerText.includes('दर्ज');
+
+        if (isLogQuery && onAddObservation && childrenList) {
+          const matched = childrenList.find(c => {
+            const nameEn = c.name.toLowerCase();
+            const nameHi = c.nameHindi ? c.nameHindi.toLowerCase() : '';
+            return lowerText.includes(nameEn) || (nameHi && lowerText.includes(nameHi));
+          });
+
+          if (matched) {
+            let note = '';
+            if (cleaned.includes(':')) {
+              note = cleaned.split(':').slice(1).join(':').trim();
+            } else {
+              const nameIndexEn = lowerText.indexOf(matched.name.toLowerCase());
+              const nameIndexHi = matched.nameHindi ? lowerText.indexOf(matched.nameHindi.toLowerCase()) : -1;
+              let index = -1;
+              let len = 0;
+              if (nameIndexEn !== -1) {
+                index = nameIndexEn;
+                len = matched.name.length;
+              } else if (nameIndexHi !== -1) {
+                index = nameIndexHi;
+                len = matched.nameHindi.length;
+              }
+              if (index !== -1) {
+                note = cleaned.substring(index + len)
+                  .replace(/^(for|of|ki|ki\stippani|ki\sobservation|के\sलिए|की\sटिप्पणी|के\sबारे\sमें|:|\s)+/gi, '')
+                  .trim();
+              }
+            }
+
+            if (note.length < 3) {
+              note = language === 'hi' 
+                ? `दैनिक गतिविधि में अच्छा प्रदर्शन` 
+                : `Good performance in daily activities.`;
+            }
+
+            let category = 'social';
+            if (lowerText.includes('read') || lowerText.includes('math') || lowerText.includes('count') || lowerText.includes('learn') || lowerText.includes('padhne') || lowerText.includes('painting') || lowerText.includes('drawing')) {
+              category = 'learning';
+            } else if (lowerText.includes('health') || lowerText.includes('food') || lowerText.includes('eat') || lowerText.includes('nutrition') || lowerText.includes('sehat') || lowerText.includes('khana')) {
+              category = 'health';
+            }
+
+            onAddObservation(matched.id, note, category);
+          }
+        }
+
+        // Sync messages from backend
+        setMessages((prev) => {
+          const filtered = prev.filter((m) => m.id !== tempUserMsgId);
+          const userMsgFromBackend: ChatMessage = {
+            id: res.userMessage.id,
+            sender: 'user',
+            message: res.userMessage.message,
+            timestamp: new Date(res.userMessage.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          };
+          const aiMsgFromBackend: ChatMessage = {
+            id: res.aiMessage.id,
+            sender: 'ai',
+            message: res.aiMessage.message,
+            timestamp: new Date(res.aiMessage.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          };
+          return [...filtered, userMsgFromBackend, aiMsgFromBackend];
+        });
+        setIsTyping(false);
+      } catch (err) {
+        console.error('Failed to send message online, falling back to local simulation:', err);
+        runOfflineSimulation();
+      }
+    }
+  };
+
+  // Web Speech API / Voice Input Simulation
+  const startSpeechRecognition = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      // Simulate Voice Input if SpeechRecognition is not supported by the browser (randomizing the prompt)
+      setIsListening(true);
+      setListeningText(language === 'hi' ? 'सुन रहा हूँ...' : 'Listening...');
+      
+      const voiceQueries = language === 'hi'
+        ? [
+            'किसे गृह दौरे की आवश्यकता है?',
+            'रानी की प्रोफाइल दिखाएं',
+            'शर्मीले बच्चों के लिए गतिविधि बताएं',
+            'साप्ताहिक पोषण सारांश बताओ'
+          ]
+        : [
+            'Who needs a home visit?',
+            'Show Rani\'s profile summary',
+            'Suggest activity for shy children',
+            'Generate nutrition summary'
+          ];
+      const simQuery = voiceQueries[Math.floor(Math.random() * voiceQueries.length)];
+
+      speechSimTimeout1Ref.current = setTimeout(() => {
+        setListeningText(`${language === 'hi' ? 'पहचाना गया' : 'Detected'}: "${simQuery}"`);
+        
+        speechSimTimeout2Ref.current = setTimeout(() => {
+          setIsListening(false);
+          sendMessage(simQuery);
+        }, 1500);
+      }, 1500);
       return;
     }
 
-    if (isMicActive) {
-      recognitionRef.current?.stop();
-      setIsMicActive(false);
-      return;
+    try {
+      const recognition = new SpeechRecognition();
+      recognitionRef.current = recognition;
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = language === 'hi' ? 'hi-IN' : 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setListeningText(language === 'hi' ? 'सुन रहा हूँ... बोलिए' : 'Listening... Speak now');
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error("Speech recognition error", event);
+        setListeningText(language === 'hi' ? 'आवाज़ नहीं पहचानी गई' : 'Speech not recognized');
+        speechSimTimeout1Ref.current = setTimeout(() => setIsListening(false), 1200);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        if (transcript) {
+          setListeningText(`${language === 'hi' ? 'पहचाना गया' : 'Detected'}: "${transcript}"`);
+          speechSimTimeout1Ref.current = setTimeout(() => {
+            setIsListening(false);
+            sendMessage(transcript);
+          }, 1000);
+        }
+      };
+
+      recognition.start();
+    } catch (e) {
+      console.error(e);
+      setIsListening(false);
     }
-
-    const recognition = new Recognition();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = language === 'hi' ? 'hi-IN' : language === 'bn' ? 'bn-IN' : language === 'mr' ? 'mr-IN' : 'en-IN';
-
-    recognition.onstart = () => setIsMicActive(true);
-
-    recognition.onresult = (event: any) => {
-      let finalText = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) finalText += event.results[i][0].transcript;
-      }
-      if (finalText.trim()) {
-        setInput(finalText.trim());
-      }
-    };
-
-    recognition.onend = () => {
-      setIsMicActive(false);
-    };
-
-    recognition.onerror = () => {
-      setIsMicActive(false);
-    };
-
-    recognition.start();
-    recognitionRef.current = recognition;
   };
 
-  const clearHistory = () => {
-    localStorage.removeItem(HISTORY_KEY);
-    setMessages([welcomeMsg]);
+  const copyToClipboard = (text: string, msgId: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedMessageId(msgId);
+    setTimeout(() => setCopiedMessageId(null), 2000);
   };
+
+  const clearChatHistory = async () => {
+    const confirmMessage = language === 'hi' 
+      ? "क्या आप पूरी बातचीत मिटाना चाहते हैं?"
+      : "Are you sure you want to clear all chat messages?";
+      
+    if (window.confirm(confirmMessage)) {
+      if (!isOffline) {
+        try {
+          await chatApi.clearHistory();
+        } catch (err) {
+          console.error('Failed to clear chat history on server:', err);
+        }
+      }
+      const defaultWelcome: ChatMessage[] = [
+        {
+          id: 'welcome',
+          sender: 'ai',
+          message: language === 'hi' 
+            ? 'नमस्ते सुनीता जी! मैं प्रतिभा, आपकी एआई सहायक हूँ। आज मैं आपकी क्या मदद कर सकती हूँ?'
+            : 'Namaste Sunita Ji! I am Pratibha, your AI assistant. How can I help you today?',
+          timestamp: getFormattedTime(),
+        },
+      ];
+      setMessages(defaultWelcome);
+      localStorage.setItem('pratibha_ai_chat_history', JSON.stringify(defaultWelcome));
+    }
+  };
+
+  const currentSuggestedPrompts = getSuggestedPrompts(language);
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] dark:bg-slate-950 flex flex-col">
       {/* Header */}
       <header className="shrink-0 bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800 px-4 pt-10 pb-3">
         <div className="flex items-center gap-3">
-          <button
-            onClick={onBack}
-            className="p-2 -ml-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition-all text-gray-700 dark:text-slate-350 outline-none"
+          <button 
+            onClick={onBack} 
+            className="p-2 -ml-2 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 active:scale-95 transition-all text-gray-600 dark:text-slate-300 outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+            title="Go back"
           >
             <ArrowLeft size={20} />
           </button>
           <div className="relative shrink-0">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center">
-              <Bot size={20} className="text-white" />
-            </div>
-            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900" />
+            <img
+              src="./ai-avatar.jpg"
+              alt="AI Mentor"
+              className="w-10 h-10 rounded-full object-cover border-2 border-orange-200"
+            />
+            <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-slate-900 ${
+              isOffline ? 'bg-amber-500' : 'bg-emerald-500'
+            }`} />
           </div>
-          <div className="flex-1">
-            <h1 className="text-base font-bold text-gray-800 dark:text-white">
-              {language === 'hi' ? 'एआई मेंटर' : language === 'bn' ? 'এআই মেন্টর' : language === 'mr' ? 'एआय मेंटर' : 'AI Mentor'}
-            </h1>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-semibold text-gray-800 dark:text-white truncate">AI Mentor</h1>
             <div className="flex items-center gap-1">
-              <Wifi size={10} className="text-emerald-500" />
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-                {language === 'hi' ? 'ऑफलाइन रेडी' : 'Offline Ready'}
-              </span>
+              {isOffline ? (
+                <>
+                  <CloudOff size={10} className="text-amber-500" />
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">Offline Mode</span>
+                </>
+              ) : (
+                <>
+                  <Wifi size={10} className="text-emerald-500 animate-pulse" />
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Online (Offline Ready)</span>
+                </>
+              )}
             </div>
           </div>
+          {/* Clear history button */}
           <button
-            onClick={clearHistory}
-            className="text-[10px] text-gray-400 dark:text-slate-500 px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
+            onClick={clearChatHistory}
+            className="p-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/20 text-gray-400 hover:text-red-500 dark:text-slate-400 dark:hover:text-red-400 active:scale-95 transition-all outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+            title={language === 'hi' ? 'बातचीत साफ़ करें' : 'Clear Chat'}
           >
-            Clear
+            <Trash2 size={18} />
           </button>
         </div>
       </header>
@@ -471,12 +749,26 @@ CRITICAL LANGUAGE RULE:
                   : 'bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 text-gray-700 dark:text-slate-200 rounded-bl-md shadow-sm'
               }`}
             >
-              <p className="text-sm whitespace-pre-line leading-relaxed">
-                {renderFormattedMessage(msg.message, msg.sender === 'user')}
-              </p>
-              <p className={`text-[10px] mt-1.5 ${msg.sender === 'user' ? 'text-violet-200' : 'text-gray-400 dark:text-slate-500'}`}>
-                {msg.timestamp}
-              </p>
+              <p className="text-sm whitespace-pre-line leading-relaxed">{msg.message}</p>
+              
+              <div className="flex items-center justify-between gap-4 mt-1 border-t border-black/5 dark:border-white/5 pt-1">
+                <span className={`text-[9px] ${msg.sender === 'user' ? 'text-violet-200' : 'text-gray-400 dark:text-slate-500'}`}>
+                  {msg.timestamp}
+                </span>
+                {msg.sender === 'ai' && (
+                  <button
+                    onClick={() => copyToClipboard(msg.message, msg.id)}
+                    className="p-1 -mr-1 rounded hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors outline-none focus-visible:ring-1 focus-visible:ring-violet-500"
+                    title="Copy response"
+                  >
+                    {copiedMessageId === msg.id ? (
+                      <Check size={11} className="text-emerald-500" />
+                    ) : (
+                      <Copy size={11} />
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ))}
@@ -488,79 +780,141 @@ CRITICAL LANGUAGE RULE:
               <Bot size={16} className="text-white" />
             </div>
             <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <div className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '120ms' }} />
-                <div className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '240ms' }} />
+              <div className="flex items-center gap-1.5 py-1">
+                <div className="w-2 h-2 bg-gray-300 dark:bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="w-2 h-2 bg-gray-300 dark:bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="w-2 h-2 bg-gray-300 dark:bg-slate-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Suggested Prompts — shown when < 3 messages */}
-      {messages.length <= 2 && (
-        <div className="shrink-0 px-4 pb-2">
-          <p className="text-[10px] text-gray-400 dark:text-slate-500 mb-2 font-medium">
-            {language === 'hi' ? 'त्वरित प्रश्न:' : language === 'bn' ? 'দ্রুত প্রশ্ন:' : 'Quick Questions:'}
+      {/* Suggested Prompts Button Toggle */}
+      {messages.length > 2 && (
+        <div className="shrink-0 px-4 pb-1 flex justify-end">
+          <button 
+            onClick={() => setShowSuggestions(!showSuggestions)}
+            className="flex items-center gap-1 text-[10px] text-violet-600 dark:text-violet-400 font-semibold bg-violet-50 dark:bg-violet-950/20 px-2.5 py-1 rounded-lg border border-violet-100 dark:border-slate-800 active:scale-95 transition-all outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+          >
+            <span>💡 {showSuggestions ? (language === 'hi' ? 'विकल्प छुपाएं' : 'Hide Suggestions') : (language === 'hi' ? 'त्वरित प्रश्न' : 'Quick Questions')}</span>
+          </button>
+        </div>
+      )}
+
+      {/* Suggested Prompts List */}
+      {(messages.length <= 2 || showSuggestions) && (
+        <div className="shrink-0 px-4 pb-2 select-none">
+          <p className="text-[10px] text-gray-400 dark:text-slate-500 mb-1.5">
+            {language === 'hi' ? 'त्वरित प्रश्न:' : 'Quick Questions:'}
           </p>
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
-            {suggestedPrompts.map((prompt) => (
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
+            {currentSuggestedPrompts.map((prompt) => (
               <button
                 key={prompt}
-                onClick={() => sendMessage(prompt)}
-                className="px-3 py-2 bg-white dark:bg-slate-900 border border-orange-200 dark:border-slate-800 rounded-xl text-xs text-gray-700 dark:text-slate-350 whitespace-nowrap active:scale-95 transition-transform select-none hover:bg-orange-50 dark:hover:bg-slate-800 outline-none"
+                onClick={() => {
+                  sendMessage(prompt);
+                  setShowSuggestions(false);
+                }}
+                className="px-3 py-2 bg-white dark:bg-slate-900 border border-orange-200 dark:border-slate-800 rounded-xl text-xs text-gray-700 dark:text-slate-300 whitespace-nowrap active:scale-95 transition-transform select-none hover:bg-orange-50 dark:hover:bg-slate-800 outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
               >
-                {prompt.length > 28 ? prompt.slice(0, 28) + '…' : prompt}
+                {prompt.length > 30 ? prompt.slice(0, 30) + '...' : prompt}
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* Input Bar */}
+      {/* Input Area */}
       <div className="shrink-0 p-4 bg-white dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800">
-        <div className="flex items-center gap-2">
-          {/* Mic button — real voice input */}
-          <button
-            type="button"
-            onClick={toggleMic}
-            className={`w-10 h-10 rounded-full flex items-center justify-center active:scale-95 transition-all shrink-0 outline-none ${
-              isMicActive
-                ? 'bg-red-500 shadow-md shadow-red-500/30 animate-pulse'
-                : 'bg-orange-100 dark:bg-orange-950/40 hover:bg-orange-200'
-            }`}
+        <div className="flex items-end gap-2">
+          {/* Voice Input Button */}
+          <button 
+            onClick={startSpeechRecognition}
+            disabled={isTyping}
+            className="w-10 h-10 bg-orange-100 dark:bg-orange-950/40 rounded-full flex items-center justify-center active:scale-95 transition-transform shrink-0 disabled:opacity-50 outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+            title="Voice input"
           >
-            {isMicActive
-              ? <Square size={14} className="text-white" fill="white" />
-              : <Mic size={18} className="text-orange-600 dark:text-orange-400" />}
+            <Mic size={18} className="text-orange-600 dark:text-orange-400" />
           </button>
 
-          {/* Text Input */}
-          <div className="flex-1 flex items-center bg-gray-100 dark:bg-slate-950 rounded-full px-4 h-10 border border-transparent focus-within:border-violet-400 dark:focus-within:border-violet-600 transition-colors">
-            <input
-              type="text"
+          {/* Text Area */}
+          <div className="flex-1 flex items-end bg-gray-100 dark:bg-slate-950 rounded-2xl px-3.5 py-1.5 border border-transparent focus-within:border-violet-500 focus-within:bg-white dark:focus-within:bg-slate-900 transition-all focus-within:ring-2 focus-within:ring-violet-500/25">
+            <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && sendMessage(input)}
-              placeholder={isMicActive
-                ? (language === 'hi' ? 'सुन रहे हैं...' : 'Listening...')
-                : (language === 'hi' ? 'कुछ भी पूछें...' : language === 'bn' ? 'যেকোনো কিছু জিজ্ঞেস করুন...' : 'Ask anything...')}
-              className="flex-1 bg-transparent text-sm text-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 outline-none"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  sendMessage(input);
+                }
+              }}
+              placeholder={language === 'hi' ? 'कुछ भी पूछें...' : 'Ask anything...'}
+              rows={1}
+              disabled={isTyping}
+              className="flex-1 bg-transparent text-sm text-gray-700 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 outline-none resize-none py-1 scrollbar-hide max-h-20"
             />
           </div>
 
           {/* Send Button */}
           <button
-            type="button"
             onClick={() => sendMessage(input)}
-            disabled={!input.trim()}
-            className="w-10 h-10 bg-violet-500 hover:bg-violet-600 rounded-full flex items-center justify-center active:scale-95 transition-all shrink-0 disabled:opacity-40 disabled:active:scale-100 shadow-sm shadow-violet-500/20 outline-none"
+            disabled={!input.trim() || isTyping}
+            className="w-10 h-10 bg-violet-500 rounded-full flex items-center justify-center active:scale-95 transition-transform shrink-0 disabled:opacity-50 outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+            title="Send message"
           >
             <Send size={16} className="text-white" />
           </button>
         </div>
       </div>
+
+      {/* Voice Dictation Overlay Modal */}
+      {isListening && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-[280px] border border-gray-100 dark:border-slate-800 shadow-2xl space-y-6 text-center animate-scaleIn">
+            <div>
+              <span className="text-[10px] bg-orange-100 dark:bg-orange-950/50 text-orange-700 dark:text-orange-400 px-3 py-1 rounded-full font-bold uppercase tracking-wider">
+                {language === 'hi' ? 'वॉइस डिक्टेशन' : 'Voice Dictation'}
+              </span>
+              <h3 className="text-sm font-bold text-gray-800 dark:text-white mt-4 min-h-[40px] px-2 leading-relaxed">
+                {listeningText}
+              </h3>
+            </div>
+
+            {/* Pulsating Mic Icon and Wave Rings */}
+            <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+              <div className="absolute inset-0 bg-orange-500/20 rounded-full animate-ping" />
+              <div className="absolute inset-3 bg-orange-500/10 rounded-full animate-pulse" />
+              <div className="w-16 h-16 bg-gradient-to-br from-orange-400 to-amber-500 rounded-full flex items-center justify-center shadow-lg shadow-orange-500/20">
+                <Mic size={26} className="text-white" />
+              </div>
+            </div>
+
+            <p className="text-[10px] text-gray-400 dark:text-slate-500 leading-relaxed px-2">
+              {language === 'hi'
+                ? 'अपने माइक में स्पष्ट बोलें या वॉइस सिम्युलेटर की प्रतीक्षा करें...'
+                : 'Speak clearly into your microphone or wait for voice simulation...'}
+            </p>
+
+            <button
+              onClick={() => {
+                if (recognitionRef.current) {
+                  try {
+                    recognitionRef.current.abort();
+                  } catch (e) {
+                    console.error(e);
+                  }
+                }
+                setIsListening(false);
+              }}
+              className="w-full h-10 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-700 dark:text-slate-300 text-xs font-bold rounded-xl active:scale-95 transition-transform"
+            >
+              {language === 'hi' ? 'रद्द करें' : 'Cancel'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

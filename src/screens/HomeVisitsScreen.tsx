@@ -386,19 +386,19 @@ export function HomeVisitsScreen({
         <div className="grid grid-cols-2 gap-3 shrink-0">
           <div className="bg-amber-50 dark:bg-amber-950/20 rounded-2xl p-4 border border-amber-100 dark:border-amber-900/30">
             <div className="flex items-center gap-2 mb-2">
-              <Clock size={16} className="text-amber-600 dark:text-amber-450" />
-              <span className="text-xs text-amber-600 dark:text-amber-450 font-medium">Pending</span>
+              <Clock size={16} className="text-amber-600 dark:text-amber-400" />
+              <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Pending</span>
             </div>
             <p className="text-2xl font-bold text-gray-800 dark:text-white">{pending.length}</p>
-            <p className="text-xs text-gray-550 dark:text-slate-400">visits to complete</p>
+            <p className="text-xs text-gray-500 dark:text-slate-400">visits to complete</p>
           </div>
           <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-2xl p-4 border border-emerald-100 dark:border-emerald-900/30">
             <div className="flex items-center gap-2 mb-2">
-              <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-450" />
-              <span className="text-xs text-emerald-600 dark:text-emerald-450 font-medium">Completed</span>
+              <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />
+              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Completed</span>
             </div>
             <p className="text-2xl font-bold text-gray-800 dark:text-white">{completed.length}</p>
-            <p className="text-xs text-gray-555 dark:text-slate-400">this month</p>
+            <p className="text-xs text-gray-500 dark:text-slate-400">this month</p>
           </div>
         </div>
 
@@ -412,12 +412,12 @@ export function HomeVisitsScreen({
               <div key={visit.id} className="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-slate-800 animate-fadeIn">
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 bg-amber-100 dark:bg-amber-950/30 rounded-xl flex items-center justify-center shrink-0">
-                    <MapPin size={18} className="text-amber-600 dark:text-amber-405" />
+                    <MapPin size={18} className="text-amber-600 dark:text-amber-400" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-gray-800 dark:text-white truncate pr-2">{visit.childName}&apos;s Home</h4>
-                      <span className="text-[10px] px-2 py-0.5 bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-450 rounded-full font-medium shrink-0">
+                       <h4 className="text-sm font-semibold text-gray-800 dark:text-white truncate pr-2">{visit.childName}&apos;s Home</h4>
+                       <span className="text-[10px] px-2 py-0.5 bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 rounded-full font-medium shrink-0">
                         Pending
                       </span>
                     </div>
@@ -492,7 +492,7 @@ export function HomeVisitsScreen({
                 <div key={visit.id} className="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-slate-800 opacity-60">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-950/30 rounded-xl flex items-center justify-center shrink-0">
-                      <CheckCircle2 size={18} className="text-emerald-650 dark:text-emerald-400" />
+                      <CheckCircle2 size={18} className="text-emerald-600 dark:text-emerald-400" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <h4 className="text-sm font-semibold text-gray-800 dark:text-white truncate">{visit.childName}&apos;s Home</h4>
