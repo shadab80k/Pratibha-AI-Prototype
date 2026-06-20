@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { ArrowLeft, User, Shield, Volume2, Database, RotateCcw, Save, Lock, Download, Upload, HelpCircle, ChevronDown, ChevronUp } from 'lucide-react';
-import { useLanguage } from '../context/LanguageContext';
+import { useLanguage, type LanguageCode } from '../context/LanguageContext';
+import type { TranslationStrings } from '../lib/translations';
+import { STORAGE_KEYS } from '../lib/constants';
+import { API_BASE } from '../lib/apiClient';
 
 interface SettingsScreenProps {
   onBack: () => void;
@@ -27,18 +30,15 @@ export function SettingsScreen({
 
   // Security states
   const [pinEnabled, setPinEnabled] = useState(() => {
-    return localStorage.getItem('pratibha_pin_enabled') === 'true';
+    return localStorage.getItem(STORAGE_KEYS.PIN_ENABLED) === 'true';
   });
   const [pinCode, setPinCode] = useState(() => {
-    return localStorage.getItem('pratibha_pin_code') || '';
+    return localStorage.getItem(STORAGE_KEYS.PIN_CODE) || '';
   });
 
   // AI API Configuration states
   const [apiMode, setApiMode] = useState(() => {
-    return localStorage.getItem('pratibha_api_mode') || 'gemini';
-  });
-  const [geminiKey, setGeminiKey] = useState(() => {
-    return localStorage.getItem('pratibha_gemini_key') || '';
+    return localStorage.getItem(STORAGE_KEYS.API_MODE) || 'gemini';
   });
 
   const [testing, setTesting] = useState(false);
@@ -70,15 +70,18 @@ export function SettingsScreen({
     setTesting(true);
     const start = Date.now();
     try {
+      const token = localStorage.getItem(STORAGE_KEYS.JWT);
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+        `${API_BASE}/ai/chat`,
         {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
           },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: 'Respond with "OK"' }] }]
+            contents: [{ parts: [{ text: 'Respond with "OK"' }] }],
+            stream: false
           })
         }
       );
@@ -102,39 +105,33 @@ export function SettingsScreen({
       alert('Please enter a valid 4-digit PIN code (numbers only) or disable PIN login.');
       return;
     }
-    if (apiMode === 'gemini' && !geminiKey.trim()) {
-      alert('Please enter a valid Gemini Developer key or select Local Simulator.');
-      return;
-    }
-    localStorage.setItem('pratibha_pin_enabled', String(pinEnabled));
-    localStorage.setItem('pratibha_pin_code', pinCode);
-    localStorage.setItem('pratibha_api_mode', apiMode);
-    localStorage.setItem('pratibha_gemini_key', geminiKey);
+    localStorage.setItem(STORAGE_KEYS.PIN_ENABLED, String(pinEnabled));
+    localStorage.setItem(STORAGE_KEYS.PIN_CODE, pinCode);
+    localStorage.setItem(STORAGE_KEYS.API_MODE, apiMode);
     
     // Save worker details to localStorage in case rememberMe is configured
-    localStorage.setItem('pratibha_worker_id', workerId);
-    localStorage.setItem('pratibha_worker_name', workerName);
-    localStorage.setItem('pratibha_anganwadi_block', anganwadiBlock);
+    localStorage.setItem(STORAGE_KEYS.WORKER_ID, workerId);
+    localStorage.setItem(STORAGE_KEYS.WORKER_NAME, workerName);
+    localStorage.setItem(STORAGE_KEYS.ANGANWADI_BLOCK, anganwadiBlock);
     
     onBack();
   };
 
   const handleExportBackup = () => {
     const backupKeys = [
-      'pratibha_children',
-      'pratibha_visits',
-      'pratibha_notifications',
-      'pratibha_scheduled_activities',
-      'pratibha_pending_sync',
-      'pratibha_worker_id',
-      'pratibha_worker_name',
-      'pratibha_anganwadi_block',
-      'pratibha_pin_enabled',
-      'pratibha_pin_code',
-      'pratibha_remember_me',
-      'pratibha_is_offline',
-      'pratibha_api_mode',
-      'pratibha_gemini_key'
+      STORAGE_KEYS.CHILDREN,
+      STORAGE_KEYS.VISITS,
+      STORAGE_KEYS.NOTIFICATIONS,
+      STORAGE_KEYS.SCHEDULED_ACTIVITIES,
+      STORAGE_KEYS.PENDING_SYNC,
+      STORAGE_KEYS.WORKER_ID,
+      STORAGE_KEYS.WORKER_NAME,
+      STORAGE_KEYS.ANGANWADI_BLOCK,
+      STORAGE_KEYS.PIN_ENABLED,
+      STORAGE_KEYS.PIN_CODE,
+      STORAGE_KEYS.REMEMBER_ME,
+      STORAGE_KEYS.IS_OFFLINE,
+      STORAGE_KEYS.API_MODE
     ];
     const backupData: Record<string, string | null> = {};
     backupKeys.forEach(key => {
@@ -164,7 +161,7 @@ export function SettingsScreen({
         if (typeof data !== 'object') throw new Error('Invalid file format');
 
         // Simple validation check
-        if (!data.pratibha_children && !data.pratibha_visits) {
+        if (!data[STORAGE_KEYS.CHILDREN] && !data[STORAGE_KEYS.VISITS]) {
           throw new Error('No valid Pratibha state objects detected.');
         }
 
@@ -176,8 +173,9 @@ export function SettingsScreen({
 
         alert('Database restored successfully! The app will reload to apply your backup.');
         window.location.reload();
-      } catch (err: any) {
-        alert('Restore failed: ' + err.message);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        alert('Restore failed: ' + msg);
       }
     };
     reader.readAsText(file);
@@ -316,18 +314,8 @@ export function SettingsScreen({
 
             {apiMode === 'gemini' && (
               <div className="space-y-3 animate-slideDown">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1 uppercase">GEMINI DEVELOPER KEY</label>
-                  <input
-                    type="password"
-                    value={geminiKey}
-                    onChange={(e) => setGeminiKey(e.target.value)}
-                    className="w-full text-xs p-2.5 bg-gray-50 dark:bg-slate-950 border border-slate-205 dark:border-slate-850 dark:text-white rounded-xl focus:border-orange-500 focus:outline-none transition-colors"
-                    placeholder="AIzaSy..."
-                  />
-                </div>
                 <p className="text-[9px] text-gray-400 dark:text-slate-500 leading-normal">
-                  Requires a Gemini 2.5 Flash developer API key. Requests are sent directly from your browser to Google Generative Language servers.
+                  Uses server-side Gemini 2.5 Flash model proxy. Requests are processed securely through the backend services.
                 </p>
                 
                 {/* AI Diagnostics & Telemetry Tester */}
@@ -425,7 +413,7 @@ export function SettingsScreen({
                 ].map((lang) => (
                   <button
                     key={lang.code}
-                    onClick={() => setLanguage(lang.code as any)}
+                    onClick={() => setLanguage(lang.code as LanguageCode)}
                     type="button"
                     className={`h-9 rounded-xl text-xs font-semibold select-none active:scale-95 transition-all ${
                       language === lang.code
@@ -454,7 +442,7 @@ export function SettingsScreen({
                           : 'bg-slate-50 dark:bg-slate-950 text-slate-650 dark:text-slate-355 border border-transparent dark:border-slate-850'
                       }`}
                     >
-                      {t(speedKey as any)}
+                      {t(speedKey as keyof TranslationStrings)}
                     </button>
                   );
                 })}

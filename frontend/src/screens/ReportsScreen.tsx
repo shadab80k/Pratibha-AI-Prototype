@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { jsPDF } from 'jspdf';
 import { ArrowLeft, FileText, Download, Clock, TrendingUp, Users, Heart, Plus, CheckCircle2, Loader2 } from 'lucide-react';
 import type { Screen } from '../App';
+import type { Child, Milestone } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 
 interface ReportsScreenProps {
   onBack: () => void;
   onNavigate: (screen: Screen) => void;
-  childrenList: any[];
+  childrenList: Child[];
 }
 
 interface GeneratedReport {
@@ -16,11 +17,11 @@ interface GeneratedReport {
   date: string;
   summary: string;
   type: 'attendance' | 'nutrition' | 'development' | 'weekly' | 'custom';
-  data: any;
+  data: Record<string, string | number>;
 }
 
 // ─── PDF-style export via jsPDF ──────────────────────────────────────────────
-function exportReportAsPdf(report: GeneratedReport, childrenList: any[]) {
+function exportReportAsPdf(report: GeneratedReport, childrenList: Child[]) {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -234,7 +235,7 @@ function exportReportAsPdf(report: GeneratedReport, childrenList: any[]) {
 }
 
 // ─── Dynamic report generation ───────────────────────────────────────────────
-function generateDynamicReports(childrenList: any[]): GeneratedReport[] {
+function generateDynamicReports(childrenList: Child[]): GeneratedReport[] {
   const now = new Date();
   const fmt = (d: Date) => d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
@@ -291,7 +292,7 @@ export function ReportsScreen({ onBack, onNavigate, childrenList }: ReportsScree
 
   const present = childrenList.filter(c => c.attendance === 'present').length;
   const goodNutrition = childrenList.filter(c => c.nutritionStatus === 'good').length;
-  const totalMilestones = childrenList.reduce((s, c) => s + c.milestones.filter((m: any) => m.completed).length, 0);
+  const totalMilestones = childrenList.reduce((s, c) => s + c.milestones.filter((m: Milestone) => m.completed).length, 0);
   const totalObs = childrenList.reduce((s, c) => s + (c.observations ? c.observations.length : 0), 0);
   const timeSaved = Math.max(30, totalObs * 4 + present * 2); // dynamic calc
 

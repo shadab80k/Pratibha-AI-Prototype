@@ -1,15 +1,19 @@
 import { useState } from 'react';
 import { ArrowLeft, CloudOff, CheckCircle2, Database, RefreshCw, Wifi } from 'lucide-react';
+import { useNotifications } from '../hooks/useNotifications';
+import type { PendingSyncItem } from '../types';
 
 interface OfflineScreenProps {
   onBack: () => void;
   isOffline: boolean;
-  pendingSync: any[];
+  pendingSync: PendingSyncItem[];
   onSync: () => void;
 }
 
 export function OfflineScreen({ onBack, isOffline, pendingSync, onSync }: OfflineScreenProps) {
   const [syncing, setSyncing] = useState(false);
+  const { notificationsList } = useNotifications();
+  const conflicts = notificationsList.filter(n => n.type === 'alert' && n.title.toLowerCase().includes('conflict'));
 
   const handleSyncClick = () => {
     if (isOffline) {
@@ -62,6 +66,28 @@ export function OfflineScreen({ onBack, isOffline, pendingSync, onSync }: Offlin
               : 'Connection is stable. Press Sync Now to upload local queue changes.'}
           </p>
         </div>
+
+        {/* Conflict Warning Alerts */}
+        {conflicts.length > 0 && (
+          <div className="w-full max-w-[320px] p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30 rounded-2xl mb-6 shadow-sm animate-slideDown">
+            <h3 className="text-xs font-bold text-amber-850 dark:text-amber-400 mb-1.5 flex items-center gap-1">
+              ⚠️ Sync Conflict Warning
+            </h3>
+            <div className="space-y-2">
+              {conflicts.slice(0, 3).map((conflict) => (
+                <div key={conflict.id} className="text-[10px] text-amber-750 dark:text-amber-450 leading-relaxed border-t border-amber-100/50 dark:border-amber-905/10 pt-1.5 first:border-t-0 first:pt-0">
+                  <p className="font-semibold text-amber-900 dark:text-amber-300">{conflict.title}</p>
+                  <p className="mt-0.5">{conflict.message}</p>
+                </div>
+              ))}
+            </div>
+            {conflicts.length > 3 && (
+              <p className="text-[9px] text-amber-550 dark:text-amber-500 mt-2 font-medium">
+                + {conflicts.length - 3} more conflict(s) logged in your notifications.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Sync Queue Title */}
         <div className="w-full max-w-[320px] mb-3 shrink-0 flex items-center justify-between">

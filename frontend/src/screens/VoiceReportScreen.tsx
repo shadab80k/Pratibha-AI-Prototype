@@ -1,17 +1,25 @@
 import { useState, useEffect, useRef } from 'react';
 import { saveMedia } from '../lib/indexedDb';
 import { ArrowLeft, Mic, Square, Save, Edit3, CheckCircle2, Loader2 } from 'lucide-react';
+import { STORAGE_KEYS } from '../lib/constants';
+import { useSpeech } from '../hooks/useSpeech';
 import { useLanguage } from '../context/LanguageContext';
+import { apiCall } from '../lib/apiClient';
+import { useChildren } from '../hooks/useChildren';
+import { useAuth } from '../hooks/useAuth';
+import type { VoiceReportData } from '../types';
 
 interface VoiceReportScreenProps {
   onBack: () => void;
-  onComplete: (reportData?: any) => void;
+  onComplete: (reportData?: VoiceReportData) => void;
 }
 
 type RecordingState = 'idle' | 'recording' | 'processing' | 'transcribed' | 'saved';
 
 export function VoiceReportScreen({ onBack, onComplete }: VoiceReportScreenProps) {
   const { language } = useLanguage();
+  const { childrenList } = useChildren();
+  const { workerName } = useAuth();
   const [state, setState] = useState<RecordingState>('idle');
   const [transcript, setTranscript] = useState('');
   const [waveform, setWaveform] = useState<number[]>(new Array(20).fill(5));
@@ -22,7 +30,13 @@ export function VoiceReportScreen({ onBack, onComplete }: VoiceReportScreenProps
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const recognitionRef = useRef<any>(null);
+
+  const { startListening, stopListening } = useSpeech({
+    continuous: true,
+    interimResults: true,
+    onResult: (text) => setTranscript(text),
+    onError: (err) => console.error("Speech recognition error", err.error),
+  });
 
   // MediaRecorder audio storage states
   const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
@@ -32,11 +46,7 @@ export function VoiceReportScreen({ onBack, onComplete }: VoiceReportScreenProps
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
 
   // Parsed NLP report data
-  const [reportData, setReportData] = useState<{
-    attendanceText: string;
-    attendanceCount: number;
-    childObservations: { name: string; note: string; category: string; isAlert?: boolean }[];
-  } | null>(null);
+  const [reportData, setReportData] = useState<VoiceReportData | null>(null);
 
   useEffect(() => {
     return () => {
@@ -49,11 +59,6 @@ export function VoiceReportScreen({ onBack, onComplete }: VoiceReportScreenProps
       }
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
-      }
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {}
       }
     };
   }, [audioStream]);
@@ -85,7 +90,9 @@ export function VoiceReportScreen({ onBack, onComplete }: VoiceReportScreenProps
     // 2. Observations and alerts parsing
     const sentences = text.split(/[.।?!]+/).map(s => s.trim()).filter(Boolean);
     const childObservations: { name: string; note: string; category: string; isAlert?: boolean }[] = [];
-    const childrenNames = ['Rani', 'Rohan', 'Aarav', 'Dev', 'Meera', 'Priya', 'Pooja', 'Karan'];
+    const childrenNames = childrenList && childrenList.length > 0
+      ? childrenList.map(c => c.name)
+      : ['Rani', 'Rohan', 'Aarav', 'Dev', 'Meera', 'Priya', 'Pooja', 'Karan'];
 
     sentences.forEach((sentence) => {
       const sentenceLower = sentence.toLowerCase();
@@ -123,9 +130,13 @@ export function VoiceReportScreen({ onBack, onComplete }: VoiceReportScreenProps
 
     // If no specific child is mentioned, map sentences to generic child observations to populate cards
     if (childObservations.length === 0) {
+      const fallbackNames = childrenList && childrenList.length >= 3 
+        ? [childrenList[0].name, childrenList[1].name, childrenList[2].name]
+        : ['Rani', 'Aarav', 'Rohan'];
+
       sentences.slice(0, 3).forEach((sentence, idx) => {
         childObservations.push({
-          name: idx === 0 ? 'Rani' : idx === 1 ? 'Aarav' : 'Rohan',
+          name: fallbackNames[idx] || 'Rani',
           note: sentence,
           category: idx === 0 ? 'Language' : idx === 1 ? 'Social' : 'General',
           isAlert: sentence.toLowerCase().includes('attention') || sentence.toLowerCase().includes('quiet')
@@ -187,7 +198,7 @@ export function VoiceReportScreen({ onBack, onComplete }: VoiceReportScreenProps
       mediaRecorder.start();
 
       // Web Audio setup for live visualizer
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (AudioCtx) {
         const audioContext = new AudioCtx();
         const source = audioContext.createMediaStreamSource(stream);
@@ -220,47 +231,7 @@ export function VoiceReportScreen({ onBack, onComplete }: VoiceReportScreenProps
       }, 150);
     }
 
-    // Speech recognition setup
-    const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (Recognition) {
-      try {
-        const recognition = new Recognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        
-        if (language === 'hi') {
-          recognition.lang = 'hi-IN';
-        } else if (language === 'bn') {
-          recognition.lang = 'bn-IN';
-        } else if (language === 'mr') {
-          recognition.lang = 'mr-IN';
-        } else {
-          recognition.lang = 'en-IN';
-        }
-
-        let accumulatedTranscript = '';
-        recognition.onresult = (event: any) => {
-          let interimTranscript = '';
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              accumulatedTranscript += event.results[i][0].transcript + ' ';
-            } else {
-              interimTranscript += event.results[i][0].transcript;
-            }
-          }
-          setTranscript(accumulatedTranscript + interimTranscript);
-        };
-
-        recognition.onerror = (event: any) => {
-          console.error("Speech recognition error", event.error);
-        };
-
-        recognition.start();
-        recognitionRef.current = recognition;
-      } catch (e) {
-        console.error("Failed to start SpeechRecognition", e);
-      }
-    }
+    startListening();
   };
 
   const stopRecording = () => {
@@ -287,12 +258,7 @@ export function VoiceReportScreen({ onBack, onComplete }: VoiceReportScreenProps
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {}
-      recognitionRef.current = null;
-    }
+    stopListening();
 
     const executeParsing = async () => {
       let finalTranscript = transcript.trim();
@@ -307,19 +273,21 @@ export function VoiceReportScreen({ onBack, onComplete }: VoiceReportScreenProps
         setTranscript(finalTranscript);
       }
 
-      const apiMode = localStorage.getItem('pratibha_api_mode') || 'gemini';
-      const apiKey = localStorage.getItem('pratibha_gemini_key') || '';
+      const apiMode = localStorage.getItem(STORAGE_KEYS.API_MODE) || 'gemini';
 
-      if (apiMode === 'gemini' && apiKey.trim()) {
+      if (apiMode === 'gemini') {
         try {
+          const validNames = childrenList && childrenList.length > 0
+            ? childrenList.map(c => c.name).join(', ')
+            : 'Rani, Rohan, Aarav, Dev, Meera, Ananya';
           const prompt = `You are a structured parser for an Anganwadi assistant application.
-Analyze the following speech transcript spoken by the worker Sunita Ji and extract structured JSON matching exactly this schema:
+Analyze the following speech transcript spoken by the worker ${workerName || 'Sunita Ji'} and extract structured JSON matching exactly this schema:
 {
   "attendanceCount": number,
   "attendanceText": "formatted string indicating attendance out of 21 (e.g. 19 children present out of 21, in user's query language if possible)",
   "childObservations": [
     {
-      "name": "matching child name (e.g. Rani, Rohan, Aarav, Dev, Meera, Ananya)",
+      "name": "matching child name (must be one of: ${validNames})",
       "note": "the sentence segment detailing this child's behavior/observation",
       "category": "Language" | "Social" | "Emotional" | "Cognitive" | "General",
       "isAlert": boolean (true if child was sad, quiet, struggled, needs attention, or represents a concern)
@@ -333,20 +301,14 @@ Note:
 
 Transcript: "${finalTranscript}"`;
 
-          const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }]
-              })
-            }
-          );
-
-          if (!response.ok) throw new Error('Gemini API request failed');
+          const resJson = await apiCall('/ai/chat', {
+            method: 'POST',
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              stream: false
+            })
+          });
           
-          const resJson = await response.json();
           const textResult = resJson.candidates?.[0]?.content?.parts?.[0]?.text || '';
           
           // Clean markdown wrapper if any
@@ -378,12 +340,12 @@ Transcript: "${finalTranscript}"`;
   const handleSave = () => {
     setState('saved');
     setTimeout(() => {
-      onComplete(reportData);
+      onComplete(reportData || undefined);
     }, 1500);
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 text-white flex flex-col">
+    <div className="h-full flex-1 flex flex-col overflow-hidden bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 text-white">
       {/* Header */}
       <header className="flex items-center gap-3 px-4 pt-10 pb-4">
         <button
@@ -403,7 +365,7 @@ Transcript: "${finalTranscript}"`;
       </header>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6">
+      <div className="flex-1 overflow-y-auto w-full flex flex-col items-center justify-start px-6 pt-6 pb-6 scrollbar-hide">
         {/* Status Indicator */}
         <div className="mb-8 text-center">
           {state === 'idle' && (

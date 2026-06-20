@@ -1,0 +1,99 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Worker {
+  id     String @id
+  name   String
+  mobile String
+  block  String
+}
+
+model Child {
+  id                  String              @id
+  name                String
+  nameHindi           String
+  age                 Int
+  ageDisplay          String
+  gender              String
+  avatar              String
+  nutritionStatus     String
+  developmentProgress Int
+  lastVisit           String
+  parentName          String
+  parentPhone         String
+  address             String
+  needsAttention      Boolean
+  observations        Observation[]
+  milestones          Milestone[]
+  aiInsights          String // JSON stringified array of strings
+  attendances         Attendance[]
+  homeVisits          HomeVisit[]
+  lastModified        DateTime @default(now())
+}
+
+model Observation {
+  id        String   @id
+  date      String
+  note      String
+  category  String
+  type      String
+  imageUrl  String?
+  childId   String
+  child     Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
+}
+
+model Milestone {
+  id        String   @id
+  title     String
+  date      String
+  category  String
+  completed Boolean
+  childId   String
+  child     Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
+}
+
+model Attendance {
+  id      String @id @default(uuid())
+  childId String
+  child   Child  @relation(fields: [childId], references: [id], onDelete: Cascade)
+  status  String // 'present', 'absent', 'irregular'
+  date    String // date string (e.g., 'Today', 'Yesterday', or ISO string)
+}
+
+model HomeVisit {
+  id              String  @id
+  childId         String?
+  child           Child?  @relation(fields: [childId], references: [id], onDelete: SetNull)
+  childName       String
+  parentName      String
+  concern         String
+  lastVisit       String
+  suggestedTopics String  // JSON stringified array of strings
+  status          String  // 'pending', 'completed'
+  lastModified    DateTime @default(now())
+}
+
+model Notification {
+  id      String  @id
+  title   String
+  message String
+  type    String
+  time    String
+  read    Boolean
+  action  String?
+}
+
+model ScheduledActivity {
+  id                String  @id
+  activityId        String
+  date              String
+  targetChildrenIds String  // JSON stringified array of child IDs
+  completed         Boolean
+  lastModified      DateTime @default(now())
+}

@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { ArrowLeft, MapPin, Calendar, CheckCircle2, Clock, MessageCircle, PlusCircle, X, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import type { Child, HomeVisit } from '../types';
 
 interface HomeVisitsScreenProps {
   onBack: () => void;
-  visitsList: any[];
+  visitsList: HomeVisit[];
   onCompleteVisit: (visitId: string) => void;
-  childrenList: any[];
+  childrenList: Child[];
   onAddVisit: (childName: string, parentName: string, lastVisit: string, concern: string, suggestedTopics: string[]) => void;
 }
 

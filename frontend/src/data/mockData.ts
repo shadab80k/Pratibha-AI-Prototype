@@ -26,6 +26,7 @@ export interface Observation {
   note: string;
   category: string;
   type: 'voice' | 'text' | 'photo';
+  imageUrl?: string;
 }
 
 export interface Milestone {
@@ -75,7 +76,7 @@ export interface Report {
   date: string;
   type: string;
   summary: string;
-  data: any;
+  data: Record<string, string | number>;
 }
 
 export interface ChatMessage {

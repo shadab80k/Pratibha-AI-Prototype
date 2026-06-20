@@ -1,21 +1,26 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { ArrowLeft, Send, Mic, Bot, User, Wifi, Square } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { STORAGE_KEYS } from '../lib/constants';
+import { useSpeech } from '../hooks/useSpeech';
+import { API_BASE } from '../lib/apiClient';
+import { useAuth } from '../hooks/useAuth';
 import type { ChatMessage } from '../data/mockData';
+import type { Child, Observation } from '../types';
 
 interface AiAssistantScreenProps {
   onBack: () => void;
-  childrenList?: any[];
+  childrenList?: Child[];
 }
 
 // ─── Extended NLU Knowledge Base ────────────────────────────────────────────
-const knowledgeBase: { patterns: RegExp[]; handler: (ctx: any) => string }[] = [
+const knowledgeBase: { patterns: RegExp[]; handler: (ctx: { children: Child[]; workerName?: string }) => string }[] = [
   {
     patterns: [/miss|absent|attendance|didn.t come|nahi aaya|gaayab/i],
     handler: (ctx) => {
-      const absent = ctx.children.filter((c: any) => c.attendance === 'absent' || c.attendance === 'irregular');
+      const absent = ctx.children.filter((c: Child) => c.attendance === 'absent' || c.attendance === 'irregular');
       if (absent.length === 0) return '✅ Great news! All children have good attendance this week.';
-      const list = absent.map((c: any, i: number) => `${i + 1}. **${c.name}** — ${c.attendance} (${c.ageDisplay})`).join('\n');
+      const list = absent.map((c: Child, i: number) => `${i + 1}. **${c.name}** — ${c.attendance} (${c.ageDisplay})`).join('\n');
       return `📋 **${absent.length} children need attendance attention:**\n\n${list}\n\nWould you like me to schedule home visits for them?`;
     },
   },
@@ -27,54 +32,54 @@ const knowledgeBase: { patterns: RegExp[]; handler: (ctx: any) => string }[] = [
   {
     patterns: [/home visit|ghar jana|visit kab|ghar milna/i],
     handler: (ctx) => {
-      const needVisit = ctx.children.filter((c: any) => c.attendance === 'irregular' || c.attendance === 'absent' || c.needsAttention);
+      const needVisit = ctx.children.filter((c: Child) => c.attendance === 'irregular' || c.attendance === 'absent' || c.needsAttention);
       if (needVisit.length === 0) return '🏠 No urgent home visits needed at this time. All children are doing well!';
-      const list = needVisit.map((c: any, i: number) => `${i + 1}. **${c.name}** — ${c.parentName} (${c.address})`).join('\n');
+      const list = needVisit.map((c: Child, i: number) => `${i + 1}. **${c.name}** — ${c.parentName} (${c.address})`).join('\n');
       return `🏠 **${needVisit.length} children need home visits:**\n\n${list}\n\nGo to the **Home Visits** tab to log or schedule visits.`;
     },
   },
   {
     patterns: [/nutrition|malnourish|poshan|khaana|food|weight|risk/i],
     handler: (ctx) => {
-      const atRisk = ctx.children.filter((c: any) => c.nutritionStatus === 'at-risk');
-      const monitoring = ctx.children.filter((c: any) => c.nutritionStatus === 'monitoring');
-      const good = ctx.children.filter((c: any) => c.nutritionStatus === 'good');
-      return `🥗 **Nutrition Summary:**\n\n✅ Good: ${good.length} children\n⚠️ Monitoring: ${monitoring.length} children\n🔴 At Risk: ${atRisk.length} children${atRisk.length > 0 ? '\n\n**At-risk: ' + atRisk.map((c: any) => c.name).join(', ') + '**\nPlease escalate to health worker immediately.' : ''}\n\n💊 Tip: Conduct weekly weight checks & ensure supplementary nutrition is distributed.`;
+      const atRisk = ctx.children.filter((c: Child) => c.nutritionStatus === 'at-risk');
+      const monitoring = ctx.children.filter((c: Child) => c.nutritionStatus === 'monitoring');
+      const good = ctx.children.filter((c: Child) => c.nutritionStatus === 'good');
+      return `🥗 **Nutrition Summary:**\n\n✅ Good: ${good.length} children\n⚠️ Monitoring: ${monitoring.length} children\n🔴 At Risk: ${atRisk.length} children${atRisk.length > 0 ? '\n\n**At-risk: ' + atRisk.map((c: Child) => c.name).join(', ') + '**\nPlease escalate to health worker immediately.' : ''}\n\n💊 Tip: Conduct weekly weight checks & ensure supplementary nutrition is distributed.`;
     },
   },
   {
     patterns: [/extra support|help|needs attention|problem|struggle|dhyan|madad/i],
     handler: (ctx) => {
-      const attention = ctx.children.filter((c: any) => c.needsAttention || c.developmentProgress < 60);
+      const attention = ctx.children.filter((c: Child) => c.needsAttention || c.developmentProgress < 60);
       if (attention.length === 0) return '🌟 All children are progressing well! Keep up the great work.';
-      const list = attention.map((c: any, i: number) => `${i + 1}. **${c.name}** — Progress: ${c.developmentProgress}%`).join('\n');
+      const list = attention.map((c: Child, i: number) => `${i + 1}. **${c.name}** — Progress: ${c.developmentProgress}%`).join('\n');
       return `⚠️ **${attention.length} children need extra support:**\n\n${list}\n\n📌 Consider:\n• Individual attention during activities\n• Notify parents for home practice\n• Request ASHA worker support if needed`;
     },
   },
   {
     patterns: [/milestone|development|progress|vikash|badh|grow/i],
     handler: (ctx) => {
-      const sorted = [...ctx.children].sort((a: any, b: any) => a.developmentProgress - b.developmentProgress);
+      const sorted = [...ctx.children].sort((a: Child, b: Child) => a.developmentProgress - b.developmentProgress);
       const low = sorted.slice(0, 3);
-      const list = low.map((c: any, i: number) => `${i + 1}. ${c.name} — ${c.developmentProgress}%`).join('\n');
-      return `📈 **Development Progress Overview:**\n\nClass Average: ${Math.round(ctx.children.reduce((s: number, c: any) => s + c.developmentProgress, 0) / ctx.children.length)}%\n\n**Children needing milestone support:**\n${list}\n\n💡 Focus on language & motor activities for lowest-progress children.`;
+      const list = low.map((c: Child, i: number) => `${i + 1}. ${c.name} — ${c.developmentProgress}%`).join('\n');
+      return `📈 **Development Progress Overview:**\n\nClass Average: ${Math.round(ctx.children.reduce((s: number, c: Child) => s + c.developmentProgress, 0) / ctx.children.length)}%\n\n**Children needing milestone support:**\n${list}\n\n💡 Focus on language & motor activities for lowest-progress children.`;
     },
   },
   {
     patterns: [/report|summary|aaj ka|today|daily|din/i],
     handler: (ctx) => {
-      const present = ctx.children.filter((c: any) => c.attendance === 'present').length;
+      const present = ctx.children.filter((c: Child) => c.attendance === 'present').length;
       const total = ctx.children.length;
-      const atRisk = ctx.children.filter((c: any) => c.nutritionStatus === 'at-risk').length;
-      const obs = ctx.children.reduce((sum: number, c: any) => sum + (c.observations ? c.observations.length : 0), 0);
+      const atRisk = ctx.children.filter((c: Child) => c.nutritionStatus === 'at-risk').length;
+      const obs = ctx.children.reduce((sum: number, c: Child) => sum + (c.observations ? c.observations.length : 0), 0);
       return `📊 **Today's Daily Summary:**\n\n👥 Attendance: ${present}/${total} children\n🥗 Nutrition At-Risk: ${atRisk}\n📝 Total Observations: ${obs}\n\n🕐 Generated at ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}\n\nGo to **Reports** tab to export this as a PDF.`;
     },
   },
   {
     patterns: [/activity|suggest|recommend|kya karein|khelna|kya sikhayen/i],
     handler: (ctx) => {
-      const languageLag = ctx.children.find((c: any) => c.developmentProgress < 70 && c.name === 'Rani');
-      const cogLag = ctx.children.find((c: any) => c.developmentProgress < 75 && c.name === 'Aarav');
+      const languageLag = ctx.children.find((c: Child) => c.developmentProgress < 70 && c.name === 'Rani');
+      const cogLag = ctx.children.find((c: Child) => c.developmentProgress < 75 && c.name === 'Aarav');
       let recs = `🎯 **AI Activity Recommendations for Today:**\n\n`;
       if (languageLag) recs += `• **Rhyme Time** — For ${languageLag.name}'s language development\n`;
       if (cogLag) recs += `• **Color Sorting Game** — For ${cogLag.name}'s cognitive skills\n`;
@@ -85,7 +90,7 @@ const knowledgeBase: { patterns: RegExp[]; handler: (ctx: any) => string }[] = [
   {
     patterns: [/how many|kitne|total|count|sankhya/i],
     handler: (ctx) => {
-      const present = ctx.children.filter((c: any) => c.attendance === 'present').length;
+      const present = ctx.children.filter((c: Child) => c.attendance === 'present').length;
       return `📊 **Quick Count:**\n\n• Total Enrolled: ${ctx.children.length}\n• Present Today: ${present}\n• Absent/Irregular: ${ctx.children.length - present}\n\nAttendance Rate: **${Math.round((present / ctx.children.length) * 100)}%**`;
     },
   },
@@ -96,7 +101,7 @@ const knowledgeBase: { patterns: RegExp[]; handler: (ctx: any) => string }[] = [
   },
   {
     patterns: [/thank|shukriya|dhanyawad|thanks/i],
-    handler: () => `🙏 You're welcome, Sunita Ji! You're doing wonderful work for these children. Anything else I can help with?`,
+    handler: (ctx) => `🙏 You're welcome, ${ctx.workerName || 'Sunita Ji'}! You're doing wonderful work for these children. Anything else I can help with?`,
   },
 ];
 
@@ -104,8 +109,8 @@ const DEFAULT_RESPONSE = (q: string) =>
   `🤔 I understand you're asking about **"${q}"**.\n\nI can help you with:\n• Attendance & home visits\n• Nutrition status\n• Activity recommendations\n• Development milestones\n• Daily summaries\n\nTry asking: *"Who needs home visit?"* or *"Suggest activity for today"*`;
 
 // ─── NLU Engine ──────────────────────────────────────────────────────────────
-function processQuery(text: string, children: any[]): string {
-  const ctx = { children };
+function processQuery(text: string, children: Child[], workerName: string): string {
+  const ctx = { children, workerName };
   for (const entry of knowledgeBase) {
     if (entry.patterns.some((p) => p.test(text))) {
       return entry.handler(ctx);
@@ -114,19 +119,115 @@ function processQuery(text: string, children: any[]): string {
   return DEFAULT_RESPONSE(text);
 }
 
+const MAX_RAG_TOKENS = 2500;
+export const estimateTokens = (text: string): number => Math.ceil(text.length / 4);
+
+export function parseRelativeDate(dateStr: string): number {
+  if (!dateStr) return 0;
+  const lower = dateStr.toLowerCase().trim();
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  
+  if (lower === 'today') return now;
+  if (lower === 'yesterday') return now - dayMs;
+  
+  const daysMatch = lower.match(/^(\d+)\s+days?\s+ago$/);
+  if (daysMatch) {
+    const days = parseInt(daysMatch[1], 10);
+    return now - days * dayMs;
+  }
+  
+  const weeksMatch = lower.match(/^(\d+)\s+weeks?\s+ago$/);
+  if (weeksMatch) {
+    const weeks = parseInt(weeksMatch[1], 10);
+    return now - weeks * 7 * dayMs;
+  }
+  
+  const monthsMatch = lower.match(/^(\d+)\s+months?\s+ago$/);
+  if (monthsMatch) {
+    const months = parseInt(monthsMatch[1], 10);
+    return now - months * 30 * dayMs;
+  }
+
+  const parsed = Date.parse(dateStr);
+  if (!isNaN(parsed)) return parsed;
+
+  return 0;
+}
+
+interface GlobalObservation {
+  obsId: string;
+  timestamp: number;
+}
+
 // ─── RAG Context Compiler ───────────────────────────────────────────────────
-function getRagContext(children: any[]): string {
-  const list = children.map(c => {
-    const lastObs = c.observations && c.observations.length > 0 
-      ? c.observations.map((o: any) => `[Category: ${o.category}]: ${o.note}`).join('; ')
-      : 'No observations logged yet';
-    return `- Name: ${c.name} (${c.gender === 'girl' ? 'Girl' : 'Boy'}, Age: ${c.ageDisplay}), Attendance Status: ${c.attendance}, Nutrition Status: ${c.nutritionStatus}, Development Progress: ${c.developmentProgress}%, Recent Logs: ${lastObs}`;
-  }).join('\n');
-  return `Anganwadi Center Children Registry Context:\n${list}`;
+function getRagContext(children: Child[]): { context: string; truncated: boolean } {
+  // 1. Collect all observations globally
+  const globalObsList: GlobalObservation[] = [];
+  children.forEach(c => {
+    if (c.observations) {
+      c.observations.forEach(o => {
+        globalObsList.push({
+          obsId: o.id,
+          timestamp: parseRelativeDate(o.date)
+        });
+      });
+    }
+  });
+
+  // 2. Sort observations globally by date descending (newest first)
+  globalObsList.sort((a, b) => b.timestamp - a.timestamp);
+
+  // 3. Helper to build context with set of allowed observations
+  const buildContext = (allowedObsIds: Set<string>, childrenToInclude: Child[]): string => {
+    const list = childrenToInclude.map(c => {
+      const childObs = c.observations && c.observations.length > 0
+        ? c.observations
+            .filter(o => allowedObsIds.has(o.id))
+            .map((o: Observation) => `[Category: ${o.category}]: ${o.note}`)
+            .join('; ')
+        : '';
+      const obsStr = childObs ? childObs : 'No recent observations logged';
+      return `- Name: ${c.name} (${c.gender === 'girl' ? 'Girl' : 'Boy'}, Age: ${c.ageDisplay}), Attendance Status: ${c.attendance}, Nutrition Status: ${c.nutritionStatus}, Development Progress: ${c.developmentProgress}%, Recent Logs: ${obsStr}`;
+    }).join('\n');
+    return `Anganwadi Center Children Registry Context:\n${list}`;
+  };
+
+  const allowedObsIds = new Set<string>();
+
+  // 4. If base children metadata itself exceeds token limit, prune children
+  const baseContext = buildContext(allowedObsIds, children);
+  if (estimateTokens(baseContext) > MAX_RAG_TOKENS) {
+    let fitChildren = [...children];
+    while (fitChildren.length > 0 && estimateTokens(buildContext(allowedObsIds, fitChildren)) > MAX_RAG_TOKENS) {
+      fitChildren.pop();
+    }
+    return {
+      context: buildContext(allowedObsIds, fitChildren),
+      truncated: true
+    };
+  }
+
+  // 5. Progressively include observations from newest to oldest
+  let truncated = false;
+  for (const item of globalObsList) {
+    allowedObsIds.add(item.obsId);
+    const candidateContext = buildContext(allowedObsIds, children);
+    if (estimateTokens(candidateContext) > MAX_RAG_TOKENS) {
+      allowedObsIds.delete(item.obsId);
+      truncated = true;
+      break; // Stop adding older observations
+    }
+  }
+
+  return {
+    context: buildContext(allowedObsIds, children),
+    truncated
+  };
 }
 
 // ─── Local Storage History ────────────────────────────────────────────────────
-const HISTORY_KEY = 'pratibha_chat_history';
+const HISTORY_KEY = STORAGE_KEYS.CHAT_HISTORY;
 
 function loadHistory(): ChatMessage[] {
   try {
@@ -161,17 +262,18 @@ function renderFormattedMessage(text: string, isUser: boolean) {
 // ─── Component ────────────────────────────────────────────────────────────────
 export function AiAssistantScreen({ onBack, childrenList = [] }: AiAssistantScreenProps) {
   const { language } = useLanguage();
+  const { workerName } = useAuth();
 
   const welcomeMsg: ChatMessage = {
     id: 'welcome',
     sender: 'ai',
     message: language === 'hi'
-      ? '🙏 नमस्ते सुनीता जी! मैं प्रतिभा हूँ, आपकी एआई सहायक। आज मैं आपकी कैसे मदद कर सकती हूँ?'
+      ? `🙏 नमस्ते ${workerName || 'सुनीता जी'}! मैं प्रतिभा हूँ, आपकी एआई सहायक। आज मैं आपकी कैसे मदद कर सकती हूँ?`
       : language === 'bn'
-      ? '🙏 নমস্কার সুনিতা জি! আমি প্রতিভা, আপনার এআই সহায়ক। আজ আমি আপনাকে কীভাবে সাহায্য করতে পারি?'
+      ? `🙏 নমস্কার ${workerName || 'সুনিতা জি'}! আমি প্রতিভা, আপনার এআই সহায়ক। আজ আমি আপনাকে কীভাবে সাহায্য করতে পারি?`
       : language === 'mr'
-      ? '🙏 नमस्कार सुनिता जी! मी प्रतिभा आहे, तुमची एआय सहाय्यक. आज मी तुम्हाला कशी मदत करू शकते?'
-      : '🙏 Namaste Sunita Ji! I am Pratibha, your AI assistant. How can I help you today?',
+      ? `🙏 नमस्कार ${workerName || 'सुनिता जी'}! मी प्रतिभा आहे, तुमची एआय सहाय्यक. आज मी तुम्हाला कशी मदत करू शकते?`
+      : `🙏 Namaste ${workerName || 'Sunita Ji'}! I am Pratibha, your AI assistant. How can I help you today?`,
     timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
   };
 
@@ -181,9 +283,21 @@ export function AiAssistantScreen({ onBack, childrenList = [] }: AiAssistantScre
   });
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [isMicActive, setIsMicActive] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  useEffect(() => {
+    const { truncated } = getRagContext(childrenList);
+    setIsTruncated(truncated);
+  }, [childrenList]);
+
+  const { isListening: isMicActive, startListening, stopListening } = useSpeech({
+    continuous: false,
+    interimResults: true,
+    onResult: (text) => {
+      if (text.trim()) setInput(text);
+    },
+  });
 
   const suggestedPrompts = language === 'hi' ? [
     'इस हफ्ते किसने अनुपस्थिति ली?',
@@ -228,8 +342,7 @@ export function AiAssistantScreen({ onBack, childrenList = [] }: AiAssistantScre
     setInput('');
     setIsTyping(true);
 
-    const apiMode = localStorage.getItem('pratibha_api_mode') || 'gemini';
-    const apiKey = localStorage.getItem('pratibha_gemini_key') || '';
+    const apiMode = localStorage.getItem(STORAGE_KEYS.API_MODE) || 'gemini';
 
     const aiMsgId = (Date.now() + 1).toString();
     const aiPlaceholderMsg: ChatMessage = {
@@ -239,13 +352,13 @@ export function AiAssistantScreen({ onBack, childrenList = [] }: AiAssistantScre
       timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
     };
 
-    if (apiMode === 'gemini' && apiKey.trim()) {
-      // 1. Real Streaming Gemini API call using RAG context
+    if (apiMode === 'gemini') {
+      // 1. Real Streaming Gemini API call using RAG context through server-side proxy
       try {
         setMessages((prev) => [...prev, aiPlaceholderMsg]);
         
-        const ragContext = getRagContext(childrenList);
-        const systemInstruction = `You are Pratibha, a supportive, respectful AI mentor/assistant for an Anganwadi early education worker in India named Sunita Ji.
+        const { context: ragContext } = getRagContext(childrenList);
+        const systemInstruction = `You are Pratibha, a supportive, respectful AI mentor/assistant for an Anganwadi early education worker in India named ${workerName || 'Sunita Ji'}.
 Here is the current real-time database snapshot of children in the Anganwadi center (RAG context):
 ${ragContext}
 
@@ -262,15 +375,20 @@ CRITICAL LANGUAGE RULE:
 2. NEVER mix languages (e.g., do not reply in Hindi to an English question, and do not use Devanagari Hindi inside an English reply).
 3. Do not wrap your response in outer quote characters.`;
 
+        const token = localStorage.getItem(STORAGE_KEYS.JWT);
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=${apiKey}`,
+          `${API_BASE}/ai/chat`,
           {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
             body: JSON.stringify({
               contents: [
                 { role: 'user', parts: [{ text: systemInstruction + "\n\nUser Question: " + text }] }
-              ]
+              ],
+              stream: true
             })
           }
         );
@@ -319,7 +437,7 @@ CRITICAL LANGUAGE RULE:
         setMessages((prev) => 
           prev.map(msg => 
             msg.id === aiMsgId 
-              ? { ...msg, message: "⚠️ Gemini API Error. Please verify your internet connection or check your Developer API Key in settings." } 
+              ? { ...msg, message: "⚠️ Gemini API Error. Please verify your internet connection or verify the server configuration." } 
               : msg
           )
         );
@@ -327,7 +445,7 @@ CRITICAL LANGUAGE RULE:
       }
     } else {
       // 2. Typewriter Streaming NLU Simulator fallback (offline mode)
-      const responseText = processQuery(text, childrenList);
+      const responseText = processQuery(text, childrenList, workerName);
       
       // Delay NLU start slightly to simulate processing
       const delay = 450 + Math.random() * 450;
@@ -358,47 +476,12 @@ CRITICAL LANGUAGE RULE:
     }
   }, [childrenList]);
 
-  // Mic voice input using SpeechRecognition
   const toggleMic = () => {
-    const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!Recognition) {
-      alert('Voice input is not supported on this browser. Please try Chrome.');
-      return;
-    }
-
     if (isMicActive) {
-      recognitionRef.current?.stop();
-      setIsMicActive(false);
-      return;
+      stopListening();
+    } else {
+      startListening();
     }
-
-    const recognition = new Recognition();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = language === 'hi' ? 'hi-IN' : language === 'bn' ? 'bn-IN' : language === 'mr' ? 'mr-IN' : 'en-IN';
-
-    recognition.onstart = () => setIsMicActive(true);
-
-    recognition.onresult = (event: any) => {
-      let finalText = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) finalText += event.results[i][0].transcript;
-      }
-      if (finalText.trim()) {
-        setInput(finalText.trim());
-      }
-    };
-
-    recognition.onend = () => {
-      setIsMicActive(false);
-    };
-
-    recognition.onerror = () => {
-      setIsMicActive(false);
-    };
-
-    recognition.start();
-    recognitionRef.current = recognition;
   };
 
   const clearHistory = () => {
@@ -407,7 +490,7 @@ CRITICAL LANGUAGE RULE:
   };
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] dark:bg-slate-950 flex flex-col">
+    <div className="h-full flex-1 flex flex-col overflow-hidden bg-[#F9FAFB] dark:bg-slate-950">
       {/* Header */}
       <header className="shrink-0 bg-white dark:bg-slate-900 border-b border-gray-100 dark:border-slate-800 px-4 pt-10 pb-3">
         <div className="flex items-center gap-3">
@@ -442,6 +525,21 @@ CRITICAL LANGUAGE RULE:
           </button>
         </div>
       </header>
+
+      {isTruncated && (
+        <div className="bg-amber-50 dark:bg-amber-950/20 border-b border-amber-100 dark:border-amber-900/30 px-4 py-1.5 flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-400 font-medium shrink-0">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+          <span className="leading-tight">
+            {language === 'hi' 
+              ? 'डेटा सीमा: केवल हालिया टिप्पणियों को प्राथमिकता दी गई है।' 
+              : language === 'bn'
+              ? 'উপাত্ত সীমাবদ্ধতা: সাম্প্রতিক পর্যবেক্ষণগুলোকে অগ্রাধিকার দেওয়া হয়েছে।'
+              : language === 'mr'
+              ? 'डेटा मर्यादा: केवळ अलीकडील निरीक्षणांना प्राधान्य दिले आहे.'
+              : 'Data limit: Prioritizing most recent observations to fit size constraints.'}
+          </span>
+        </div>
+      )}
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-hide">

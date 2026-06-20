@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState } from 'react';
 import { translations, type TranslationStrings } from '../lib/translations';
+import { STORAGE_KEYS } from '../lib/constants';
 
 export type LanguageCode = 'en' | 'hi' | 'bn' | 'mr';
 
@@ -13,7 +14,7 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguageState] = useState<LanguageCode>(() => {
-    const saved = localStorage.getItem('pratibha_language');
+    const saved = localStorage.getItem(STORAGE_KEYS.LANGUAGE);
     if (saved === 'hi' || saved === 'en' || saved === 'bn' || saved === 'mr') {
       return saved as LanguageCode;
     }
@@ -22,7 +23,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const setLanguage = (lang: LanguageCode) => {
     setLanguageState(lang);
-    localStorage.setItem('pratibha_language', lang);
+    localStorage.setItem(STORAGE_KEYS.LANGUAGE, lang);
   };
 
   const t = (key: keyof TranslationStrings, variables?: Record<string, string | number>): string => {

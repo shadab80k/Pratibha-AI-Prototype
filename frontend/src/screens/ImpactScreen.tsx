@@ -1,11 +1,12 @@
 import { ArrowLeft, TrendingUp, Clock, BookOpen, Users, Home, Heart, Award } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import type { Child, HomeVisit, ScheduledActivity } from '../types';
 
 interface ImpactScreenProps {
   onBack: () => void;
-  childrenList?: any[];
-  visitsList?: any[];
-  scheduledActivities?: any[];
+  childrenList?: Child[];
+  visitsList?: HomeVisit[];
+  scheduledActivities?: ScheduledActivity[];
 }
 
 export function ImpactScreen({

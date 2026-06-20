@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { Search, Filter, ChevronRight, AlertTriangle, Heart, UserCheck } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import type { Child } from '../types';
 
 interface ChildrenScreenProps {
   onChildSelect: (childId: string) => void;
-  childrenList: any[];
+  childrenList: Child[];
   onToggleAttendance: (childId: string) => void;
 }
 
@@ -132,7 +133,7 @@ export function ChildrenScreen({ onChildSelect, childrenList, onToggleAttendance
           ].map((opt) => (
             <button
               key={opt.key}
-              onClick={() => setSortBy(opt.key as any)}
+              onClick={() => setSortBy(opt.key as 'name' | 'age' | 'progress')}
               type="button"
               className={`px-3 py-1.5 rounded-xl font-bold select-none active:scale-95 transition-all ${
                 sortBy === opt.key

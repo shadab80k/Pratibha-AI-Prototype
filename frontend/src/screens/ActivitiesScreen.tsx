@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { ArrowLeft, Sparkles, Clock, Users, Package, ChevronDown, ChevronUp, Calendar, Plus, X } from 'lucide-react';
 import { activities } from '../data/mockData';
+import type { Activity } from '../data/mockData';
+import type { Child, ScheduledActivity } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 
 interface ActivitiesScreenProps {
   onBack: () => void;
-  childrenList: any[];
-  scheduledActivities: any[];
+  childrenList: Child[];
+  scheduledActivities: ScheduledActivity[];
   onScheduleActivity: (activityId: string, date: string, targetChildrenIds: string[]) => void;
   showToast: (message: string, type?: 'success' | 'info' | 'warning') => void;
 }
@@ -142,7 +144,7 @@ export function ActivitiesScreen({ onBack, childrenList, scheduledActivities, on
   };
 
   // Dynamic AI personalization logic per activity
-  const getRecommendationReason = (activity: any) => {
+  const getRecommendationReason = (activity: Activity) => {
     if (!childrenList || childrenList.length === 0) return null;
 
     // Check if any child has low developmental progress and matching lag

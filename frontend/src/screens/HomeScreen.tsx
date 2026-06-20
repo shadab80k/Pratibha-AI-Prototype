@@ -17,6 +17,8 @@ import {
   Activity,
 } from 'lucide-react';
 import type { Screen } from '../App';
+import type { Child, HomeVisit } from '../types';
+import type { TranslationStrings } from '../lib/translations';
 import { useLanguage } from '../context/LanguageContext';
 
 interface HomeScreenProps {
@@ -27,8 +29,8 @@ interface HomeScreenProps {
   notificationCount: number;
   onNotificationClick: () => void;
   onOpenSidebar: () => void;
-  childrenList: any[];
-  visitsList: any[];
+  childrenList: Child[];
+  visitsList: HomeVisit[];
   workerName: string;
 }
 
@@ -39,7 +41,7 @@ const quickActions = [
   { label: 'Add\nObservation', labelHi: 'टिप्पणी', icon: PlusCircle, color: 'bg-sky-500', screen: 'children' as Screen },
 ];
 
-const actionKeys: Record<string, any> = {
+const actionKeys: Record<string, string> = {
   'Record\nAttendance': 'recordAttendance',
   'Start\nActivity': 'startActivity',
   'Voice\nReport': 'voiceReport',
@@ -51,7 +53,7 @@ const alerts = [
   { icon: FileText, text: 'Nutrition update pending', color: 'text-amber-500', bg: 'bg-amber-50' },
 ];
 
-const alertKeys: Record<string, any> = {
+const alertKeys: Record<string, string> = {
   '3 children absent for 5+ days': 'absenteesAlert',
   'Nutrition update pending': 'nutritionAlert'
 };
@@ -131,11 +133,11 @@ export function HomeScreen({
   }
 
   // Dynamic daily insight generated from latest child observations
-  let latestObs: any = null;
+  let latestObs: { childName: string; note: string; category: string } | null = null;
   let newestObsId = 0;
-  childrenList.forEach((c) => {
+  for (const c of childrenList) {
     if (c.observations && Array.isArray(c.observations)) {
-      c.observations.forEach((o: any) => {
+      for (const o of c.observations) {
         if (o.id.startsWith('obs-') || o.id.startsWith('v-obs-')) {
           const timestamp = parseInt(o.id.split('-').pop() || '0');
           if (timestamp > newestObsId) {
@@ -143,9 +145,9 @@ export function HomeScreen({
             latestObs = { childName: c.nameHindi && language === 'hi' ? c.nameHindi : c.name, note: o.note, category: o.category };
           }
         }
-      });
+      }
     }
-  });
+  }
 
   let dailyInsight = '';
   const isHindi = language === 'hi';
@@ -281,7 +283,7 @@ export function HomeScreen({
                     <Icon size={24} className="text-white" strokeWidth={2} />
                   </div>
                   <span className="text-[11px] text-gray-600 dark:text-slate-350 text-center leading-tight whitespace-pre-line font-medium">
-                    {t(actionKeys[action.label] || action.label)}
+                    {t((actionKeys[action.label] || action.label) as keyof TranslationStrings)}
                   </span>
                 </button>
               );
@@ -338,7 +340,7 @@ export function HomeScreen({
                 <div className={`w-10 h-10 ${alert.bg} dark:bg-slate-950 rounded-xl flex items-center justify-center shrink-0`}>
                   <Icon size={18} className={alert.color} />
                 </div>
-                <span className="text-sm text-gray-700 dark:text-slate-300 flex-1">{t(alertKeys[alert.text] || alert.text)}</span>
+                <span className="text-sm text-gray-700 dark:text-slate-300 flex-1">{t((alertKeys[alert.text] || alert.text) as keyof TranslationStrings)}</span>
                 <ChevronRight size={16} className="text-gray-300 dark:text-slate-500" />
               </button>
             );

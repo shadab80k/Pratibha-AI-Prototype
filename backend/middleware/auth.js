@@ -1,6 +1,9 @@
 import jwt from 'jsonwebtoken';
 
-const SECRET_KEY = process.env.JWT_SECRET || 'pratibha_secret_key_12345';
+const SECRET_KEY = process.env.JWT_SECRET;
+if (!SECRET_KEY) {
+  throw new Error("JWT_SECRET is required");
+}
 
 export function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, AlertTriangle, Clock, CheckCircle2, Info, Bell, Trash2, X } from 'lucide-react';
 import type { Screen } from '../App';
+import type { Notification } from '../types';
 
 interface NotificationsScreenProps {
   onBack: () => void;
   onNavigate: (screen: Screen) => void;
   onRead: () => void;
-  notificationsList: any[];
+  notificationsList: Notification[];
   onClearNotifications: () => void;
   onDeleteNotification?: (id: string) => void;
 }

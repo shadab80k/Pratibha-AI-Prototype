@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { CloudOff, ArrowRight, ArrowLeft, ShieldAlert, Lock } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { Toast } from '../components/Toast';
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000/api';
+import { apiCall } from '../lib/apiClient';
+import { STORAGE_KEYS } from '../lib/constants';
 
 interface LoginScreenProps {
   onLogin: (workerId: string, mobile: string, rememberMe: boolean) => void;
@@ -14,19 +14,20 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
   const [workerId, setWorkerId] = useState('AW-4521');
   const [mobile, setMobile] = useState('9876543210');
   const [serverOtp, setServerOtp] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
   const [localToast, setLocalToast] = useState<{ message: string; type: 'success' | 'info' | 'warning' } | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
   
   const [savedPin] = useState(() => {
-    return localStorage.getItem('pratibha_pin_code') || '';
+    return localStorage.getItem(STORAGE_KEYS.PIN_CODE) || '';
   });
   const [savedWorkerName] = useState(() => {
-    return localStorage.getItem('pratibha_worker_name') || 'Worker';
+    return localStorage.getItem(STORAGE_KEYS.WORKER_NAME) || 'Worker';
   });
 
   const [step, setStep] = useState<'login' | 'otp' | 'pin'>(() => {
-    const rememberMeActive = localStorage.getItem('pratibha_remember_me') === 'true';
-    const pinActive = localStorage.getItem('pratibha_pin_enabled') === 'true';
+    const rememberMeActive = localStorage.getItem(STORAGE_KEYS.REMEMBER_ME) === 'true';
+    const pinActive = localStorage.getItem(STORAGE_KEYS.PIN_ENABLED) === 'true';
     return (rememberMeActive && pinActive) ? 'pin' : 'login';
   });
   
@@ -96,42 +97,38 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
     setErrors({});
 
     try {
-      const response = await fetch(`${API_BASE}/auth/send-otp`, {
+      await apiCall('/auth/send-otp', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify({
           workerId: trimmedId.toUpperCase(),
           mobile: cleanMobile
         })
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setServerOtp(data.otp);
-        setStep('otp');
-        setOtpSentStatus(false);
-        setLocalToast({
-          message: `OTP sent successfully! Verification code is ${data.otp}`,
-          type: 'success'
-        });
-      } else {
-        const errData = await response.json();
-        setErrors({
-          workerId: errData.error || 'Server validation failed'
-        });
-      }
-    } catch (err) {
-      console.warn('Backend server unreachable during OTP request. Falling back to offline mode:', err);
-      // Offline fallback: go to OTP step, use mock 1234
-      setServerOtp('1234');
+      setServerOtp(null);
+      setIsOffline(false);
       setStep('otp');
       setOtpSentStatus(false);
       setLocalToast({
-        message: 'Working offline. Verification code: 1234',
-        type: 'info'
+        message: `OTP sent successfully! Please enter the code sent to your mobile number.`,
+        type: 'success'
       });
+    } catch (err: any) {
+      if (err.status) {
+        setErrors({
+          workerId: err.message || 'Server validation failed'
+        });
+      } else {
+        console.warn('Backend server unreachable during OTP request. Falling back to offline mode:', err);
+        setIsOffline(true);
+        setServerOtp('1234');
+        setStep('otp');
+        setOtpSentStatus(false);
+        setLocalToast({
+          message: 'Working offline. Verification code: 1234',
+          type: 'info'
+        });
+      }
     }
   };
 
@@ -157,50 +154,57 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
   const handleVerify = async () => {
     const otpCode = otp.join('');
-    const expectedOtp = serverOtp || '1234';
 
-    if (otpCode !== expectedOtp) {
-      setErrors({ otp: t('invalidOtpErr') });
+    if (isOffline) {
+      const expectedOtp = serverOtp || '1234';
+      if (otpCode !== expectedOtp) {
+        setErrors({ otp: t('invalidOtpErr') });
+        return;
+      }
+
+      // Offline fallback: continue login locally
+      const cleanId = workerId.trim().toUpperCase();
+      localStorage.removeItem(STORAGE_KEYS.REMEMBER_ME);
+      localStorage.removeItem(STORAGE_KEYS.WORKER_ID);
+      localStorage.removeItem(STORAGE_KEYS.WORKER_NAME);
+      localStorage.removeItem(STORAGE_KEYS.ANGANWADI_BLOCK);
+      localStorage.removeItem(STORAGE_KEYS.MOBILE);
+      localStorage.removeItem(STORAGE_KEYS.JWT);
+      onLogin(cleanId, mobile.trim(), rememberMe);
       return;
     }
 
     try {
-      const response = await fetch(`${API_BASE}/auth/verify-otp`, {
+      const data = await apiCall('/auth/verify-otp', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify({
           mobile: mobile.trim(),
           otp: otpCode
         })
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        localStorage.setItem('pratibha_jwt', data.token);
-        if (data.worker) {
-          localStorage.setItem('pratibha_worker_id', data.worker.id);
-          localStorage.setItem('pratibha_worker_name', data.worker.name);
-          localStorage.setItem('pratibha_anganwadi_block', data.worker.block);
-        }
-        setErrors({});
-        onLogin(workerId.trim().toUpperCase(), mobile.trim(), rememberMe);
-      } else {
-        const errData = await response.json();
-        setErrors({ otp: errData.error || 'Server OTP verification failed' });
+      localStorage.setItem(STORAGE_KEYS.JWT, data.token);
+      if (data.worker) {
+        localStorage.setItem(STORAGE_KEYS.WORKER_ID, data.worker.id);
+        localStorage.setItem(STORAGE_KEYS.WORKER_NAME, data.worker.name);
+        localStorage.setItem(STORAGE_KEYS.ANGANWADI_BLOCK, data.worker.block);
       }
-    } catch (err) {
-      console.warn('Backend server unreachable during OTP verification. Falling back to local offline mode:', err);
-      // Offline fallback: continue login locally
-      const cleanId = workerId.trim().toUpperCase();
-      const mockName = cleanId === 'AW-1234' ? 'Saraswati Devi' : (cleanId === 'AW-4521' ? 'Sunita Ji' : 'Anganwadi Worker');
-      localStorage.setItem('pratibha_worker_id', cleanId);
-      localStorage.setItem('pratibha_worker_name', mockName);
-      localStorage.setItem('pratibha_anganwadi_block', 'Anganwadi Block 3');
-      
       setErrors({});
-      onLogin(cleanId, mobile.trim(), rememberMe);
+      onLogin(workerId.trim().toUpperCase(), mobile.trim(), rememberMe);
+    } catch (err: any) {
+      if (err.status) {
+        setErrors({ otp: err.message || 'Server OTP verification failed' });
+      } else {
+        console.warn('Backend server unreachable during OTP verification. Falling back to local offline mode:', err);
+        const cleanId = workerId.trim().toUpperCase();
+        const mockName = cleanId === 'AW-1234' ? 'Saraswati Devi' : (cleanId === 'AW-4521' ? 'Sunita Ji' : 'Anganwadi Worker');
+        localStorage.setItem(STORAGE_KEYS.WORKER_ID, cleanId);
+        localStorage.setItem(STORAGE_KEYS.WORKER_NAME, mockName);
+        localStorage.setItem(STORAGE_KEYS.ANGANWADI_BLOCK, 'Anganwadi Block 3');
+        
+        setErrors({});
+        onLogin(cleanId, mobile.trim(), rememberMe);
+      }
     }
   };
 
@@ -212,37 +216,31 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
     const cleanMobile = mobile.trim().replace(/\s+/g, '');
 
     try {
-      const response = await fetch(`${API_BASE}/auth/send-otp`, {
+      await apiCall('/auth/send-otp', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify({
           workerId: trimmedId.toUpperCase(),
           mobile: cleanMobile
         })
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setServerOtp(data.otp);
-        setOtpSentStatus(true);
-        setLocalToast({
-          message: `OTP resent! Verification code is ${data.otp}`,
-          type: 'success'
-        });
-      } else {
-        const errData = await response.json();
-        setErrors({ otp: errData.error || 'Failed to resend OTP' });
-      }
-    } catch (err) {
-      console.warn('Backend server unreachable during OTP resend:', err);
-      setServerOtp('1234');
       setOtpSentStatus(true);
       setLocalToast({
-        message: 'Resent offline. Verification code: 1234',
-        type: 'info'
+        message: 'Verification code resent successfully!',
+        type: 'success'
       });
+    } catch (err: any) {
+      if (err.status) {
+        setErrors({
+          otp: err.message || 'Failed to resend OTP'
+        });
+      } else {
+        console.warn('Backend server unreachable during OTP resend. Offline fallback active.', err);
+        setLocalToast({
+          message: 'Resending code simulated offline. Use 1234.',
+          type: 'info'
+        });
+      }
     }
 
     setTimeout(() => {
@@ -276,8 +274,8 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
     const entered = pinInput.join('');
     if (entered === savedPin) {
       setErrors({});
-      const savedId = localStorage.getItem('pratibha_worker_id') || 'AW-4521';
-      const savedMobile = localStorage.getItem('pratibha_mobile') || '9876543210';
+      const savedId = localStorage.getItem(STORAGE_KEYS.WORKER_ID) || 'AW-4521';
+      const savedMobile = localStorage.getItem(STORAGE_KEYS.MOBILE) || '9876543210';
       onLogin(savedId, savedMobile, true);
     } else {
       setErrors({ pin: 'Incorrect PIN code. Please try again.' });
@@ -290,7 +288,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
   const handleResetPin = () => {
     // Erase rememberMe & switch to standard login
-    localStorage.removeItem('pratibha_remember_me');
+    localStorage.removeItem(STORAGE_KEYS.REMEMBER_ME);
     setStep('login');
     setErrors({});
     setPinInput(['', '', '', '']);
@@ -422,7 +420,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
           <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 rounded-2xl text-center">
             <p className="text-xs font-bold text-amber-700 dark:text-amber-400">
-              💡 {serverOtp ? `Verification Code: ${serverOtp}` : t('mockOtpHint')}
+              💡 {isOffline ? (serverOtp ? `Verification Code: ${serverOtp}` : t('mockOtpHint')) : 'Check backend console for OTP (Dev Mode)'}
             </p>
           </div>
         </div>
