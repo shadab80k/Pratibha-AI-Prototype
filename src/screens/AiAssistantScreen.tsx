@@ -142,6 +142,22 @@ function saveHistory(msgs: ChatMessage[]) {
   } catch {}
 }
 
+// Helper to render markdown bold tags as strong React elements
+function renderFormattedMessage(text: string, isUser: boolean) {
+  if (!text) return null;
+  const parts = text.split(/\*\*([^*]+)\*\*/g);
+  return parts.map((part, index) => {
+    if (index % 2 === 1) {
+      return (
+        <strong key={index} className={isUser ? "font-bold text-white" : "font-bold text-gray-950 dark:text-white"}>
+          {part}
+        </strong>
+      );
+    }
+    return part;
+  });
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export function AiAssistantScreen({ onBack, childrenList = [] }: AiAssistantScreenProps) {
   const { language } = useLanguage();
@@ -455,7 +471,9 @@ CRITICAL LANGUAGE RULE:
                   : 'bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 text-gray-700 dark:text-slate-200 rounded-bl-md shadow-sm'
               }`}
             >
-              <p className="text-sm whitespace-pre-line leading-relaxed">{msg.message}</p>
+              <p className="text-sm whitespace-pre-line leading-relaxed">
+                {renderFormattedMessage(msg.message, msg.sender === 'user')}
+              </p>
               <p className={`text-[10px] mt-1.5 ${msg.sender === 'user' ? 'text-violet-200' : 'text-gray-400 dark:text-slate-500'}`}>
                 {msg.timestamp}
               </p>
