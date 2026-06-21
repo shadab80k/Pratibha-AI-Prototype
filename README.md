@@ -1,5 +1,9 @@
-# 🌟 Pratibha AI (प्रतिभा एआई)
-### *Empowering Anganwadi Workers with an Offline-First, Voice-Enabled Intelligent Assistant*
+# 🌟 Pratibha AI
+### *Empowering India's Anganwadi Heroes*
+
+**Team Name:** Hacker Heist  
+**Team Members:** Mohd Shadab & Aviral Trivedi  
+**Submission:** Phase 2 Submission — *"Less Paperwork. More Child Engagement."*
 
 [![React 19](https://img.shields.io/badge/React-19.0.0-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
 [![Vite 7](https://img.shields.io/badge/Vite-7.2.4-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vite.dev/)
