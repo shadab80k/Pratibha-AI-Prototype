@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Pratibha AI Icon</title>
+  <desc id="desc">Professional orange Pratibha AI mark with a white P and growth leaf.</desc>
+  <defs>
+    <linearGradient id="brand" x1="96" y1="72" x2="416" y2="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fb923c"/>
+      <stop offset="0.48" stop-color="#f97316"/>
+      <stop offset="1" stop-color="#c2410c"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="150" y1="86" x2="360" y2="406" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.34"/>
+      <stop offset="0.58" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="softShadow" x="-16%" y="-16%" width="132%" height="132%">
+      <feDropShadow dx="0" dy="20" stdDeviation="22" flood-color="#7c2d12" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <rect x="56" y="56" width="400" height="400" rx="118" fill="url(#brand)" filter="url(#softShadow)"/>
+  <rect x="76" y="76" width="360" height="360" rx="98" fill="none" stroke="#ffffff" stroke-opacity="0.22" stroke-width="14"/>
+  <path d="M96 180c39-70 102-104 189-100 54 3 99 22 134 56-31-46-78-74-140-82-78-11-146 11-183 126Z" fill="url(#shine)"/>
+
+  <path fill="#fff7ed" d="M164 142h116c76 0 124 44 124 112 0 70-49 114-126 114h-45v66h-69V142Zm69 63v100h42c36 0 58-19 58-50 0-32-22-50-58-50h-42Z"/>
+  <path d="M321 158c42 9 73 43 73 91 0 52-33 89-84 103 24-31 30-60 17-86-12-25-38-42-72-50 29-7 51-25 66-58Z" fill="#fed7aa" opacity="0.45"/>
+  <path d="M302 389c43-4 74-27 93-70 12 61-26 106-93 120-47 10-87-6-121-41 34 1 69-2 121-9Z" fill="#dcfce7"/>
+  <path d="M212 413c64 1 121-18 174-58" fill="none" stroke="#166534" stroke-opacity="0.44" stroke-width="18" stroke-linecap="round"/>
+</svg>

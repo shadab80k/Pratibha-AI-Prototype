@@ -8,6 +8,7 @@ const PRECACHE_ASSETS = [
   '/manifest.json',
   '/splash-illustration.jpg',
   '/ai-avatar.jpg',
+  '/pratibha-icon.svg',
   '/child-aarav.png',
   '/child-ananya.png',
   '/child-dev.png',
