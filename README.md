@@ -59,18 +59,18 @@
 graph TD
   AW((Anganwadi Worker)) -->|Voice/Text Input| UI[Vite React PWA Shell]
   
-  subgraph Client Environment (Offline Capable)
+  subgraph "Client Environment (Offline Capable)"
     UI --> AppState[React Context State Manager]
-    AppState -->|Offline Cache Store| LS[(Local Storage)]
+    AppState -->|Offline Cache Store| LS["Local Storage"]
     UI -->|Asset Cache| SW[Service Worker sw.js]
-    SW --> Cache[(Browser Cache API)]
+    SW --> Cache["Browser Cache API"]
   end
 
   UI -->|Secure Bearer JWT Request| API[Express API Gateway]
 
-  subgraph Secure Backend Environment
+  subgraph "Secure Backend Environment"
     API -->|Auth Verification| Middleware[JWT & Rate Limit Middleware]
-    API -->|Prisma Client| DB[(SQLite Database dev.db)]
+    API -->|Prisma Client| DB["SQLite Database (dev.db)"]
     API -->|Secure RAG API Proxy| ChatRoute[/api/ai/chat]
   end
 
